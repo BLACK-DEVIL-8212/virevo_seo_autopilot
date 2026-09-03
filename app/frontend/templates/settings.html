@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Settings · {{ website.name }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>⚙️ Settings</h2>
+    <div class="subtitle">
+      <span style="color:var(--accent-2);font-weight:600;">{{ website.name }}</span>
+      <span style="color:var(--muted);margin:0 6px;">·</span>
+      <span style="color:var(--muted);font-size:12px;">Configure your website settings</span>
+    </div>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;">
+    ← Back to Website
+  </a>
+</div>
+
+<div class="grid grid-2" style="align-items:start;">
+  <div>
+    <div class="card" style="padding:20px 24px;">
+      <h3 style="margin:0 0 16px 0;font-size:16px;display:flex;align-items:center;gap:8px;">
+        🔌 Connection Details
+      </h3>
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 16px;align-items:center;">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Type</div>
+        <div>
+          <span class="badge badge-info" style="font-size:12px;padding:4px 16px;border-radius:12px;">
+            {{ website.connection_type|upper }}
+          </span>
+        </div>
+
+        {% if website.connections %}
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Host</div>
+        <div>
+          <code style="font-size:13px;background:var(--bg);padding:2px 10px;border-radius:4px;color:var(--accent-2);">
+            {{ website.connections[0].host }}
+          </code>
+        </div>
+
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Username</div>
+        <div style="font-size:13px;color:var(--text);">{{ website.connections[0].username }}</div>
+
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Password</div>
+        <div>
+          <span class="kbd" style="font-family:monospace;background:var(--bg);padding:2px 10px;border-radius:4px;font-size:12px;border:1px solid var(--border);">
+            {{ mask(website.connections[0].password_encrypted) }}
+          </span>
+          <span style="font-size:11px;color:var(--muted);margin-left:6px;">🔒 encrypted</span>
+        </div>
+
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Last Tested</div>
+        <div style="font-size:12px;color:var(--muted);font-family:monospace;">
+          {{ website.connections[0].last_tested|dt or 'Never' }}
+          <span style="margin-left:8px;">
+            <span class="badge {{ 'badge-success' if website.connections[0].last_status == 'success' else 'badge-high' }}" 
+                  style="font-size:9px;padding:1px 10px;border-radius:10px;">
+              {{ website.connections[0].last_status|upper or 'UNKNOWN' }}
+            </span>
+          </span>
+        </div>
+        {% endif %}
+
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Website Root</div>
+        <div>
+          <code style="font-size:13px;background:var(--bg);padding:2px 10px;border-radius:4px;">
+            {{ website.website_root_path or '—' }}
+          </code>
+        </div>
+
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Detected Tech</div>
+        <div>
+          <span class="tag" style="font-size:12px;padding:3px 14px;border-radius:10px;background:var(--bg);border-color:var(--border);">
+            {{ website.technology or 'Unknown' }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card" style="padding:20px 24px;">
+      <h3 style="margin:0 0 16px 0;font-size:16px;display:flex;align-items:center;gap:8px;">
+        ✏️ Business & Crawl Settings
+      </h3>
+      <form method="POST">
+        <div style="margin-bottom:14px;">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.3px;color:var(--muted);margin-bottom:4px;">
+            Website Name
+          </label>
+          <input name="name" value="{{ website.name }}" style="padding:10px 14px;border-radius:8px;font-size:14px;">
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.3px;color:var(--muted);margin-bottom:4px;">
+            Website Root Path
+          </label>
+          <input name="web_root" value="{{ website.website_root_path }}" placeholder="/public_html" style="padding:10px 14px;border-radius:8px;font-size:13px;font-family:monospace;">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">The directory where your website files are stored on the server.</div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.3px;color:var(--muted);margin-bottom:4px;">
+            Business Description
+          </label>
+          <textarea name="business_description" style="min-height:100px;padding:10px 14px;border-radius:8px;font-size:13px;resize:vertical;">{{ website.business_description or '' }}</textarea>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Helps the AI understand your business context for better optimization recommendations.</div>
+        </div>
+
+        <button class="btn" type="submit" style="width:100%;padding:10px;font-size:14px;font-weight:700;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:6px;">
+          💾 Save Settings
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="border:2px solid var(--bad);background:rgba(255,94,110,0.03);padding:20px 24px;">
+  <h3 style="margin:0 0 12px 0;font-size:16px;color:var(--bad);display:flex;align-items:center;gap:8px;">
+    ⚠️ Danger Zone
+  </h3>
+  <div style="margin-bottom:16px;">
+    <div class="desc" style="font-size:13px;color:var(--muted);line-height:1.6;">
+      <strong style="color:var(--bad);">Warning:</strong> Permanently remove this website and all its data from the app.
+      <br>The live website and hosting files will <strong>NOT</strong> be deleted.
+    </div>
+  </div>
+  <form method="POST" action="{{ url_for('delete_website', website_id=website.id) }}" 
+        onsubmit="return confirm('⚠️ Are you sure you want to remove \"{{ website.name }}\" from AI SEO Autopilot?\n\nThis will permanently delete all local data including:\n• Crawl data\n• SEO issues\n• Optimization history\n• Changes and backups\n\nThe live website and hosting files will NOT be deleted.\n\nThis action cannot be undone!');">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <button class="btn btn-danger" type="submit" style="padding:10px 24px;font-weight:700;border-radius:8px;display:flex;align-items:center;gap:6px;">
+        🗑️ Delete Website
+      </button>
+      <span style="font-size:11px;color:var(--muted);">This action is permanent and cannot be undone</span>
+    </div>
+  </form>
+</div>
+
+<style>
+/* Settings grid layout */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Detail grid for connection info */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.detail-grid .label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.detail-grid .value {
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* Card improvements */
+.card {
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(79,125,255,0.15);
+}
+
+/* Danger zone hover effect */
+.card:last-child:hover {
+  border-color: var(--bad);
+  box-shadow: 0 0 30px rgba(255,94,110,0.05);
+}
+
+/* Badge colors */
+.badge-success { background: rgba(46,204,113,0.15); color: var(--good); }
+.badge-high { background: rgba(255,94,110,0.15); color: var(--bad); }
+.badge-info { background: rgba(79,125,255,0.15); color: var(--accent-2); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .topbar .btn {
+    align-self: flex-start;
+  }
+  
+  .detail-grid {
+    grid-template-columns: 1fr;
+    gap: 4px 0;
+  }
+  
+  .detail-grid .label {
+    margin-top: 6px;
+  }
+  
+  .detail-grid .label:first-child {
+    margin-top: 0;
+  }
+  
+  .card {
+    padding: 16px 18px;
+  }
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 14px 16px;
+  }
+  
+  .btn {
+    font-size: 13px;
+    padding: 8px 16px;
+  }
+  
+  .danger-zone-message {
+    font-size: 12px;
+  }
+}
+
+/* Form input improvements */
+input, textarea {
+  transition: all 0.2s ease;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,125,255,0.12);
+  outline: none;
+}
+
+/* Password mask styling */
+.kbd {
+  font-family: monospace;
+  background: var(--bg);
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  letter-spacing: 1px;
+}
+
+/* Delete button confirmation animation */
+.btn-danger {
+  transition: all 0.2s ease;
+}
+
+.btn-danger:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 20px rgba(255,94,110,0.3);
+}
+
+/* Test status badge */
+.last-status-badge {
+  font-size: 9px;
+  padding: 1px 10px;
+  border-radius: 10px;
+}
+</style>
+{% endblock %}

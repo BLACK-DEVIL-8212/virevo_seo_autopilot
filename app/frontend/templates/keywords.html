@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+{% block title %}Keyword Intelligence - {{ website.name }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>🔑 Keyword Intelligence</h2>
+    <div class="subtitle">
+      <span style="color:var(--accent-2);font-weight:600;">{{ website.name }}</span>
+      <span style="color:var(--muted);margin:0 6px;">·</span>
+      <span style="color:var(--muted);font-size:12px;">{{ keywords|length }} keywords</span>
+      <span style="color:var(--muted);margin:0 6px;">·</span>
+      <span style="color:var(--muted);font-size:12px;">
+        {{ latest_plan.actions_json.keyword_intelligence.summary.total_keywords if latest_plan and latest_plan.actions_json and latest_plan.actions_json.keyword_intelligence else 0 }} total analyzed
+      </span>
+    </div>
+  </div>
+  <div class="row" style="gap:8px;flex-wrap:wrap;">
+    <a class="btn btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;">
+      ← Back
+    </a>
+    <button class="btn" onclick="runKeywordAnalysis()" style="display:flex;align-items:center;gap:6px;padding:8px 20px;border-radius:8px;font-weight:700;">
+      🚀 Run Keyword Analysis
+    </button>
+  </div>
+</div>
+
+{% if latest_plan and latest_plan.actions_json and latest_plan.actions_json.keyword_intelligence %}
+{% set ki = latest_plan.actions_json.keyword_intelligence %}
+<div class="grid grid-4" style="margin-bottom:12px;">
+  <div class="stat" style="border-left:3px solid var(--accent);">
+    <div class="label">📊 Total Keywords</div>
+    <div class="value" style="color:var(--accent-2);">{{ ki.summary.total_keywords }}</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--good);">
+    <div class="label">⭐ High Opportunity</div>
+    <div class="value" style="color:var(--good);">{{ ki.summary.high_opportunity }}</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--warn);">
+    <div class="label">📈 Trending</div>
+    <div class="value" style="color:var(--warn);">{{ ki.summary.trending_keywords }}</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--bad);">
+    <div class="label">🔍 Content Gaps</div>
+    <div class="value" style="color:var(--bad);">{{ ki.summary.content_gaps_found }}</div>
+  </div>
+</div>
+
+<div class="grid grid-4" style="margin-bottom:16px;">
+  <div class="stat" style="border-left:3px solid var(--crit);">
+    <div class="label">🔀 Cannibalization</div>
+    <div class="value" style="color:{% if ki.summary.cannibalization_issues > 0 %}var(--crit){% else %}var(--good){% endif %};">
+      {{ ki.summary.cannibalization_issues }}
+    </div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--accent-2);">
+    <div class="label">📄 Pages with Strategy</div>
+    <div class="value" style="color:var(--accent-2);">{{ ki.summary.pages_with_strategy }}</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--accent);">
+    <div class="label">🎯 Strategies</div>
+    <div class="value" style="color:var(--accent);">{{ ki.strategies_count }}</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--good);">
+    <div class="label">📝 New Pages</div>
+    <div class="value" style="color:var(--good);">{{ ki.new_pages }}</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="padding:0;overflow:hidden;">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div class="section-title" style="margin:0;">🎯 Keyword Opportunities</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <select id="filterIntent" onchange="filterKeywords()" class="form-control" style="width:140px;padding:6px 12px;border-radius:6px;font-size:12px;background:var(--bg);">
+        <option value="">All Intents</option>
+        <option value="commercial">🛒 Commercial</option>
+        <option value="informational">📖 Informational</option>
+        <option value="transactional">💳 Transactional</option>
+        <option value="local">📍 Local</option>
+      </select>
+      <select id="filterStatus" onchange="filterKeywords()" class="form-control" style="width:150px;padding:6px 12px;border-radius:6px;font-size:12px;background:var(--bg);">
+        <option value="">All Status</option>
+        <option value="high">⭐ High Opportunity</option>
+        <option value="rising">📈 Rising Trend</option>
+        <option value="new">🆕 New Content</option>
+      </select>
+      <button onclick="resetFilters()" class="btn btn-sm btn-secondary" style="padding:4px 14px;border-radius:6px;font-size:11px;">Reset</button>
+    </div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:120px;">Keyword</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:100px;">Intent</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:80px;">Trend</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:80px;">Relevance</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:80px;">Opportunity</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:120px;">Target Page</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:80px;">Status</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;min-width:90px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for k in keywords %}
+        <tr class="keyword-row" data-intent="{{ k.intent }}" data-opportunity="{{ k.opportunity_score }}" data-trending="{{ k.is_trending }}" style="transition:background 0.2s ease;">
+          <td style="padding:10px 14px;font-weight:600;color:var(--text);">{{ k.keyword }}</td>
+          <td style="padding:10px 14px;">
+            <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;">
+              {{ k.intent|title }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;">
+            {% if k.is_trending %}
+              <span class="badge badge-success" style="font-size:10px;padding:2px 12px;border-radius:12px;">📈 Rising</span>
+            {% else %}
+              <span class="badge badge-neutral" style="font-size:10px;padding:2px 12px;border-radius:12px;">➖ Stable</span>
+            {% endif %}
+          </td>
+          <td style="padding:10px 14px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="flex:1;min-width:40px;height:4px;background:var(--bg-2);border-radius:999px;overflow:hidden;">
+                <div style="height:100%;width:{{ '%0.0f' % (k.relevance * 100) }}%;background:linear-gradient(90deg, var(--accent), var(--accent-2));border-radius:999px;"></div>
+              </div>
+              <span style="font-size:11px;font-weight:600;color:var(--muted);min-width:32px;">{{ '%0.0f' % (k.relevance * 100) }}%</span>
+            </div>
+          </td>
+          <td style="padding:10px 14px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="flex:1;min-width:40px;height:4px;background:var(--bg-2);border-radius:999px;overflow:hidden;">
+                <div style="height:100%;width:{{ '%0.0f' % (k.opportunity_score * 100) }}%;background:{% if k.opportunity_score >= 0.7 %}linear-gradient(90deg, var(--good), var(--accent)){% elif k.opportunity_score >= 0.4 %}linear-gradient(90deg, var(--warn), var(--accent)){% else %}linear-gradient(90deg, var(--muted), var(--bad)){% endif %};border-radius:999px;"></div>
+              </div>
+              <span style="font-size:11px;font-weight:600;color:var(--muted);min-width:32px;">{{ '%0.0f' % (k.opportunity_score * 100) }}%</span>
+            </div>
+          </td>
+          <td style="padding:10px 14px;max-width:140px;">
+            {% if k.page_id %}
+              {% set p = pages|selectattr('id', 'equalto', k.page_id)|first %}
+              {% if p %}
+                <a href="{{ p.url }}" target="_blank" style="font-size:12px;color:var(--accent-2);display:inline-block;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ p.url }}">
+                  {{ p.url[:40] }}
+                </a>
+              {% else %}
+                <span style="font-size:12px;color:var(--muted);">—</span>
+              {% endif %}
+            {% else %}
+              <span class="tag" style="font-size:10px;padding:2px 10px;border-radius:10px;background:var(--bg);border-color:var(--accent);color:var(--accent-2);">🆕 New Content</span>
+            {% endif %}
+          </td>
+          <td style="padding:10px 14px;">
+            <span class="tag" style="font-size:10px;padding:2px 10px;border-radius:10px;background:var(--bg);border-color:var(--border);">{{ k.provider }}</span>
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            {% if k.page_id %}
+              <a class="btn btn-sm btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}#page-{{ k.page_id }}" style="padding:3px 12px;font-size:10px;border-radius:6px;">
+                📄 View
+              </a>
+            {% else %}
+              <button class="btn btn-sm btn-success" onclick="createContentGap('{{ k.keyword }}')" style="padding:3px 12px;font-size:10px;border-radius:6px;">
+                ✨ Create
+              </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not keywords %}
+  <div style="text-align:center;padding:50px 20px;">
+    <div style="font-size:40px;margin-bottom:12px;opacity:0.4;">🔍</div>
+    <div style="font-size:16px;font-weight:600;color:var(--text);">No Keywords Yet</div>
+    <div class="desc" style="font-size:13px;max-width:400px;margin:6px auto 0;">Run a keyword analysis to seed your keyword research and discover opportunities.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if latest_plan and latest_plan.actions_json %}
+{% set ki = latest_plan.actions_json.keyword_intelligence %}
+{% if ki %}
+<div class="card" style="margin-top:16px;padding:0;overflow:hidden;">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+    <div class="section-title" style="margin:0;">🔍 Content Gaps</div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Keyword</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Intent</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Opportunity</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Priority</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Recommendation</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for gap in latest_plan.actions_json.pages %}
+          {% if gap.content_gaps %}
+            {% for g in gap.content_gaps %}
+            <tr style="transition:background 0.2s ease;">
+              <td style="padding:10px 14px;font-weight:600;color:var(--text);">{{ g.keyword }}</td>
+              <td style="padding:10px 14px;">
+                <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;">{{ g.intent|title }}</span>
+              </td>
+              <td style="padding:10px 14px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <div style="flex:1;min-width:50px;height:4px;background:var(--bg-2);border-radius:999px;overflow:hidden;">
+                    <div style="height:100%;width:{{ '%0.0f' % (g.opportunity_score * 100) }}%;background:linear-gradient(90deg, var(--accent), var(--accent-2));border-radius:999px;"></div>
+                  </div>
+                  <span style="font-size:11px;font-weight:600;color:var(--muted);min-width:32px;">{{ '%0.0f' % (g.opportunity_score * 100) }}%</span>
+                </div>
+              </td>
+              <td style="padding:10px 14px;">
+                <span class="badge {{ 'badge-critical' if g.priority == 'high' else 'badge-warning' if g.priority == 'medium' else 'badge-info' }}" 
+                      style="font-size:10px;padding:2px 12px;border-radius:12px;min-width:50px;text-align:center;display:inline-block;">
+                  {{ g.priority|upper }}
+                </span>
+              </td>
+              <td style="padding:10px 14px;font-size:12px;color:var(--muted);">{{ g.recommendation }}</td>
+            </tr>
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not latest_plan.actions_json.pages|selectattr('content_gaps')|list %}
+  <div style="text-align:center;padding:30px 20px;color:var(--muted);">
+    <div style="font-size:28px;margin-bottom:8px;opacity:0.3;">✨</div>
+    <div style="font-size:14px;">No content gaps detected</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px;padding:0;overflow:hidden;">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+    <div class="section-title" style="margin:0;">🔀 Cannibalization Issues</div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Keyword</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Pages</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Severity</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Recommendation</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in ki.cannibalization %}
+        <tr style="transition:background 0.2s ease;">
+          <td style="padding:10px 14px;font-weight:600;color:var(--text);">{{ c.keyword }}</td>
+          <td style="padding:10px 14px;">
+            <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;">{{ c.pages|length }} pages</span>
+          </td>
+          <td style="padding:10px 14px;">
+            <span class="badge {{ 'badge-critical' if c.severity == 'high' else 'badge-warning' }}" 
+                  style="font-size:10px;padding:2px 12px;border-radius:12px;min-width:50px;text-align:center;display:inline-block;">
+              {{ c.severity|upper }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;font-size:12px;color:var(--muted);">{{ c.recommendation }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not ki.cannibalization %}
+  <div style="text-align:center;padding:30px 20px;color:var(--muted);">
+    <div style="font-size:28px;margin-bottom:8px;opacity:0.3;">✅</div>
+    <div style="font-size:14px;">No keyword cannibalization detected</div>
+    <div style="font-size:12px;margin-top:4px;">All keywords are properly distributed across your pages</div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+<style>
+/* Stat cards with colored borders */
+.stat {
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.stat:hover {
+  transform: translateY(-2px);
+  border-color: rgba(79,125,255,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+/* Filter select styling */
+select.form-control {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+select.form-control:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,125,255,0.12);
+}
+
+/* Table row hover */
+tbody tr:hover td {
+  background: var(--panel-2);
+}
+
+/* Progress bar in tables */
+td div[style*="height:4px"] {
+  transition: width 0.6s ease;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .topbar .row {
+    width: 100%;
+  }
+  
+  .topbar .row .btn {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  table {
+    font-size: 12px;
+  }
+  
+  td, th {
+    padding: 8px 10px;
+  }
+}
+
+@media (max-width: 600px) {
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+  
+  .card > div:first-child {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  select.form-control {
+    width: 100% !important;
+  }
+}
+
+/* Keyword row highlighting based on opportunity */
+.keyword-row[data-opportunity*="0.7"] td:first-child {
+  color: var(--good);
+}
+</style>
+
+<script>
+function filterKeywords() {
+  const intent = document.getElementById('filterIntent').value.toLowerCase();
+  const status = document.getElementById('filterStatus').value.toLowerCase();
+  const rows = document.querySelectorAll('.keyword-row');
+  let visibleCount = 0;
+  
+  rows.forEach(row => {
+    const rowIntent = row.getAttribute('data-intent').toLowerCase();
+    const opp = parseFloat(row.getAttribute('data-opportunity'));
+    const trending = row.getAttribute('data-trending') === 'True';
+    let show = true;
+    
+    if (intent && rowIntent !== intent) show = false;
+    if (status === 'high' && opp < 0.7) show = false;
+    if (status === 'rising' && !trending) show = false;
+    if (status === 'new' && row.querySelector('.tag')?.textContent !== '🆕 New Content') show = false;
+    
+    row.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+  
+  // Show/hide empty message
+  const emptyMsg = document.querySelector('.no-results-msg');
+  if (emptyMsg) {
+    emptyMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+  }
+}
+
+function resetFilters() {
+  document.getElementById('filterIntent').value = '';
+  document.getElementById('filterStatus').value = '';
+  filterKeywords();
+}
+
+function runKeywordAnalysis() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Running...';
+  btn.style.opacity = '0.7';
+  
+  fetch('{{ url_for("api_keyword_intelligence", website_id=website.id) }}')
+    .then(r => r.json())
+    .then(data => {
+      btn.textContent = '✅ Complete!';
+      btn.style.background = 'var(--good)';
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '🚀 Run Keyword Analysis';
+        btn.style.background = '';
+        btn.style.opacity = '1';
+        location.reload();
+      }, 1500);
+    })
+    .catch(e => {
+      btn.textContent = '🚀 Run Keyword Analysis';
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      alert('❌ Analysis failed: ' + e.message);
+    });
+}
+
+function createContentGap(keyword) {
+  if (confirm('📝 Create a new page for: "' + keyword + '"?\n\nThis will add a content gap recommendation to the optimization plan.')) {
+    // Show a success message visually
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '✅ Added!';
+    btn.style.background = 'var(--good)';
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.style.background = '';
+    }, 2000);
+    alert('✅ Content gap recorded. The optimization plan will be updated.');
+  }
+}
+
+// Add no-results message to table
+document.addEventListener('DOMContentLoaded', function() {
+  const tableBody = document.querySelector('.keyword-row')?.closest('tbody');
+  if (tableBody) {
+    const emptyMsg = document.createElement('tr');
+    emptyMsg.className = 'no-results-msg';
+    emptyMsg.style.display = 'none';
+    emptyMsg.innerHTML = `
+      <td colspan="8" style="text-align:center;padding:30px 20px;color:var(--muted);">
+        <div style="font-size:28px;margin-bottom:8px;opacity:0.3;">🔍</div>
+        <div style="font-size:14px;">No keywords match your filters</div>
+        <button onclick="resetFilters()" class="btn btn-sm btn-secondary" style="margin-top:8px;padding:4px 16px;border-radius:6px;">Reset Filters</button>
+      </td>
+    `;
+    tableBody.appendChild(emptyMsg);
+  }
+});
+</script>
+{% endblock %}

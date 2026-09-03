@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · AI SEO Autopilot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>🚀 Dashboard</h2>
+    <div class="subtitle">Autonomous SEO optimization across your websites</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span class="badge badge-info" style="font-size:13px;padding:6px 16px;">
+      <span id="live-status">●</span> Live
+    </span>
+    <a class="btn" href="{{ url_for('connect_website') }}">+ Connect Website</a>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  <div class="stat">
+    <div class="label">🌐 Websites</div>
+    <div class="value">{{ stats.websites }}</div>
+    <div class="sub">{{ stats.deployed_changes }} deployed changes</div>
+  </div>
+  <div class="stat">
+    <div class="label">📄 Pages Crawled</div>
+    <div class="value">{{ stats.pages }}</div>
+    <div class="sub">Across all sites</div>
+  </div>
+  <div class="stat">
+    <div class="label">⚠️ Open Issues</div>
+    <div class="value" style="color:{% if stats.issues > 0 %}var(--bad){% else %}var(--good){% endif %};">{{ stats.issues }}</div>
+    <div class="sub">{{ stats.critical }} critical</div>
+  </div>
+  <div class="stat">
+    <div class="label">📊 Avg SEO Score</div>
+    <div class="value" style="color:{% if stats.avg_score >= 70 %}var(--good){% elif stats.avg_score >= 40 %}var(--warn){% else %}var(--bad){% endif %};">{{ stats.avg_score }}</div>
+    <div class="sub">0-100 scale</div>
+  </div>
+</div>
+
+<div class="section-title">Connected Websites</div>
+{% if websites %}
+<div class="card" style="padding:0;overflow:hidden;">
+  <div style="overflow-x:auto;padding:0;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:14px 12px;">Name</th>
+          <th style="padding:14px 12px;">URL</th>
+          <th style="padding:14px 12px;">Connection</th>
+          <th style="padding:14px 12px;">Tech</th>
+          <th style="padding:14px 12px;">Score</th>
+          <th style="padding:14px 12px;">Optimization</th>
+          <th style="padding:14px 12px;">Last Analyzed</th>
+          <th style="padding:14px 12px;text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in websites %}
+        <tr style="transition:all 0.2s ease;">
+          <td style="padding:12px;font-weight:600;">
+            <a href="{{ url_for('website_detail', website_id=w.id) }}" style="color:var(--text);">
+              {{ w.name }}
+            </a>
+          </td>
+          <td style="padding:12px;">
+            <code style="font-size:12px;background:var(--bg);padding:2px 8px;border-radius:4px;display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {{ w.root_url }}
+            </code>
+          </td>
+          <td style="padding:12px;">
+            <span class="badge badge-info" style="font-size:10px;padding:2px 12px;">
+              {{ w.connection_type }}
+            </span>
+          </td>
+          <td style="padding:12px;font-size:12px;color:var(--muted);">
+            {{ w.technology or '—' }}
+          </td>
+          <td style="padding:12px;">
+            {% set cls = 'score-good' if w.seo_health_score >= 70 else 'score-warn' if w.seo_health_score >= 40 else 'score-bad' %}
+            <span class="score-ring {{ cls }}" style="width:44px;height:44px;line-height:44px;font-size:13px;font-weight:800;">
+              {{ '%0.0f' % w.seo_health_score }}
+            </span>
+          </td>
+          <td style="padding:12px;">
+            {% set opt = latest_opts[w.id] %}
+            {% if opt %}
+              <span class="badge {{ 'badge-success' if opt.status == 'completed' else 'badge-warning' if opt.status == 'partial' else 'badge-info' if opt.status == 'running' else 'badge-neutral' }}"
+                    style="font-size:10px;padding:2px 10px;display:inline-block;min-width:60px;text-align:center;">
+                {{ opt.status|upper }}
+              </span>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px;font-weight:600;">
+                {{ '%0.0f'|format(opt.score_before) }} → {{ '%0.0f'|format(opt.score_after) }}
+                <span style="color:{% if opt.score_after > opt.score_before %}var(--good){% elif opt.score_after < opt.score_before %}var(--bad){% else %}var(--muted){% endif %};">
+                  {% if opt.score_after > opt.score_before %}↑{% elif opt.score_after < opt.score_before %}↓{% else %}→{% endif %}
+                </span>
+              </div>
+            {% else %}
+              <span class="badge badge-neutral" style="font-size:10px;padding:2px 10px;">none</span>
+            {% endif %}
+          </td>
+          <td style="padding:12px;font-size:12px;color:var(--muted);">
+            {{ w.last_analyzed|dt or 'Never' }}
+          </td>
+          <td style="padding:12px;text-align:center;">
+            <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
+              <a class="btn btn-sm btn-secondary" href="{{ url_for('website_detail', website_id=w.id) }}" 
+                 style="padding:4px 12px;font-size:11px;border-radius:6px;">
+                📊 Open
+              </a>
+              <button class="btn btn-sm btn-danger" data-remove="{{ w.id }}" data-name="{{ w.name }}" data-url="{{ w.root_url }}"
+                      style="padding:4px 12px;font-size:11px;border-radius:6px;">
+                ✕ Remove
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card" style="border:2px dashed var(--border);background:var(--bg);">
+  <div style="text-align:center;padding:40px 20px;">
+    <div style="font-size:56px;margin-bottom:16px;opacity:0.5;">🌐</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:8px;color:var(--text);">No Connected Websites</div>
+    <div style="color:var(--muted);margin-bottom:8px;font-size:14px;">You have not connected any websites yet.</div>
+    <div style="color:var(--muted);margin-bottom:20px;font-size:13px;">Connect a website to begin AI-powered SEO analysis.</div>
+    <a class="btn" href="{{ url_for('connect_website') }}" style="padding:10px 28px;font-size:14px;">
+      + Connect Website
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<div class="section-title">Recent Changes</div>
+<div class="card" style="padding:0;overflow:hidden;">
+  {% if recent_changes %}
+  <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+    <table style="margin:0;">
+      <thead style="position:sticky;top:0;z-index:5;">
+        <tr>
+          <th style="padding:12px;">ID</th>
+          <th style="padding:12px;">Page</th>
+          <th style="padding:12px;">Type</th>
+          <th style="padding:12px;">Risk</th>
+          <th style="padding:12px;">Status</th>
+          <th style="padding:12px;">When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in recent_changes %}
+        <tr style="transition:all 0.2s ease;">
+          <td style="padding:10px 12px;">
+            <code style="font-size:11px;background:var(--bg);padding:2px 6px;border-radius:3px;">
+              {{ c.change_id[:8] }}
+            </code>
+          </td>
+          <td style="padding:10px 12px;font-size:13px;">
+            <span style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {{ c.page_url[:60] }}{% if c.page_url|length > 60 %}…{% endif %}
+            </span>
+          </td>
+          <td style="padding:10px 12px;">
+            <span class="tag" style="font-size:10px;padding:2px 10px;border-radius:12px;">
+              {{ c.change_type }}
+            </span>
+          </td>
+          <td style="padding:10px 12px;">
+            <span class="badge {{ c.risk|risk_badge }}" style="font-size:10px;padding:2px 10px;min-width:50px;text-align:center;">
+              {{ c.risk|upper }}
+            </span>
+          </td>
+          <td style="padding:10px 12px;">
+            <span class="badge {{ 'badge-success' if c.status == 'deployed' else 'badge-info' if c.status in ('proposed','approved','applied_locally','uploaded','production_verified') else 'badge-warning' if c.status in ('deployment_not_supported','skipped') else 'badge-high' }}"
+                  style="font-size:10px;padding:2px 10px;min-width:60px;text-align:center;">
+              {{ c.status|upper }}
+            </span>
+          </td>
+          <td style="padding:10px 12px;font-size:12px;color:var(--muted);">
+            {{ c.created_at|dt }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:30px 20px;">
+    <div style="font-size:32px;margin-bottom:8px;opacity:0.4;">📝</div>
+    <div class="desc" style="font-size:14px;">No SEO changes deployed yet.</div>
+    <div class="desc" style="font-size:12px;margin-top:4px;">Changes will appear here once optimizations are applied.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="section-title">Background Jobs</div>
+<div class="card" style="padding:0;overflow:hidden;">
+  {% if jobs %}
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:12px;">Job</th>
+          <th style="padding:12px;">Type</th>
+          <th style="padding:12px;">Status</th>
+          <th style="padding:12px;">Progress</th>
+          <th style="padding:12px;">Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr style="transition:all 0.2s ease;">
+          <td style="padding:10px 12px;">
+            <a href="{{ url_for('job_status', job_id=j.job_id) }}" style="font-family:monospace;font-size:12px;">
+              {{ j.job_id[:12] }}
+            </a>
+          </td>
+          <td style="padding:10px 12px;">
+            <span class="tag" style="font-size:10px;padding:2px 10px;border-radius:12px;">
+              {{ j.job_type }}
+            </span>
+          </td>
+          <td style="padding:10px 12px;">
+            <span class="badge {{ 'badge-success' if j.status == 'completed' else 'badge-info' if j.status == 'running' else 'badge-high' if j.status == 'failed' else 'badge-warning' if j.status == 'blocked' else 'badge-neutral' }}"
+                  style="font-size:10px;padding:2px 10px;min-width:70px;text-align:center;">
+              {{ j.status|upper }}
+            </span>
+          </td>
+          <td style="padding:10px 12px;min-width:120px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div class="progress" style="flex:1;height:6px;background:var(--bg);">
+                <div class="progress-bar" style="width:{{ j.progress }}%;background:linear-gradient(90deg,var(--accent),var(--accent-2));"></div>
+              </div>
+              <span style="font-size:11px;font-weight:600;color:var(--muted);min-width:32px;">
+                {{ j.progress }}%
+              </span>
+            </div>
+          </td>
+          <td style="padding:10px 12px;font-size:12px;color:var(--muted);">
+            {{ j.message[:80] }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:30px 20px;">
+    <div style="font-size:32px;margin-bottom:8px;opacity:0.4;">⚙️</div>
+    <div class="desc" style="font-size:14px;">No background jobs yet.</div>
+    <div class="desc" style="font-size:12px;margin-top:4px;">Jobs will appear here when analysis or optimization runs.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div id="remove-modal" class="modal-overlay">
+  <div class="card" style="max-width:560px;width:90%;margin:0;padding:28px 32px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+      <h3 id="remove-modal-title" style="margin:0;font-size:20px;font-weight:700;">Remove Website?</h3>
+      <button id="remove-modal-close-x" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;padding:0 4px;line-height:1;">×</button>
+    </div>
+    <div id="remove-modal-body" style="margin:16px 0;"></div>
+    <div id="remove-active-jobs" style="display:none;margin:12px 0;padding:14px 16px;background:rgba(241,196,15,0.08);border-left:4px solid var(--warn);border-radius:6px;">
+      <div id="remove-active-jobs-list"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">
+      <button id="remove-modal-cancel" class="btn btn-secondary" style="padding:8px 20px;">Cancel</button>
+      <button id="remove-modal-btn" class="btn btn-danger" style="padding:8px 20px;">Remove Website</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const modal = document.getElementById('remove-modal');
+  const modalBody = document.getElementById('remove-modal-body');
+  const modalTitle = document.getElementById('remove-modal-title');
+  const removeBtn = document.getElementById('remove-modal-btn');
+  const cancelBtn = document.getElementById('remove-modal-cancel');
+  const closeX = document.getElementById('remove-modal-close-x');
+  const activeJobsSection = document.getElementById('remove-active-jobs');
+  const activeJobsList = document.getElementById('remove-active-jobs-list');
+  let currentWebsiteId = null;
+  let currentWebsiteName = null;
+  let currentWebsiteUrl = null;
+  let reloadTimeout = null;
+
+  function showModal() {
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function hideModal() {
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+    activeJobsSection.style.display = 'none';
+    activeJobsList.innerHTML = '';
+    currentWebsiteId = null;
+    if (reloadTimeout) {
+      clearTimeout(reloadTimeout);
+      reloadTimeout = null;
+    }
+  }
+
+  document.querySelectorAll('[data-remove]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      currentWebsiteId = this.getAttribute('data-remove');
+      currentWebsiteName = this.getAttribute('data-name');
+      currentWebsiteUrl = this.getAttribute('data-url');
+      modalTitle.textContent = '🗑️ Remove Website?';
+      modalBody.innerHTML = 
+        '<div style="background:var(--bg);padding:16px;border-radius:8px;margin-bottom:16px;">' +
+        '  <div style="font-size:14px;font-weight:600;">' + currentWebsiteName + '</div>' +
+        '  <code style="font-size:12px;color:var(--muted);">' + currentWebsiteUrl + '</code>' +
+        '</div>' +
+        '<p style="color:var(--muted);font-size:13px;margin-bottom:16px;">This will remove the website from AI SEO Autopilot. The live website and hosting files will NOT be deleted.</p>' +
+        '<p style="font-size:13px;font-weight:600;margin-bottom:8px;">What should happen to existing local data?</p>' +
+        '<div style="display:flex;flex-direction:column;gap:8px;padding:4px 0;">' +
+        '  <label style="font-weight:400;color:var(--text);font-size:13px;padding:8px 12px;background:var(--bg);border-radius:6px;cursor:pointer;border:1px solid var(--border);">' +
+        '    <input type="radio" name="removal_option" value="keep" checked style="margin-right:8px;">' +
+        '    <strong>Remove website only</strong>' +
+        '    <br><span style="color:var(--muted);font-size:12px;">Keep analysis history and local records if supported.</span>' +
+        '  </label>' +
+        '  <label style="font-weight:400;color:var(--text);font-size:13px;padding:8px 12px;background:var(--bg);border-radius:6px;cursor:pointer;border:1px solid var(--border);">' +
+        '    <input type="radio" name="removal_option" value="all" style="margin-right:8px;">' +
+        '    <strong>Remove website and all local SEO data</strong>' +
+        '    <br><span style="color:var(--muted);font-size:12px;">Remove crawl data, SEO reports, jobs, and local analysis data.</span>' +
+        '  </label>' +
+        '</div>';
+      activeJobsSection.style.display = 'none';
+      activeJobsList.innerHTML = '';
+      removeBtn.textContent = 'Remove Website';
+      removeBtn.disabled = false;
+      removeBtn.className = 'btn btn-danger';
+      showModal();
+
+      fetch('/api/website/' + currentWebsiteId + '/active-jobs')
+        .then(function(r) {
+          if (r.status === 404) {
+            return { __not_found: true };
+          }
+          if (!r.ok) {
+            return { __server_error: true, status: r.status };
+          }
+          return r.json();
+        })
+        .then(function(data) {
+          if (data && data.__not_found) {
+            activeJobsSection.style.display = 'block';
+            activeJobsList.innerHTML = 
+              '<div style="color:var(--bad);font-weight:600;">⚠️ Website no longer exists.</div>' +
+              '<div style="color:var(--muted);font-size:13px;">The website list will be refreshed.</div>';
+            removeBtn.textContent = 'Close';
+            removeBtn.className = 'btn btn-secondary';
+            removeBtn.disabled = false;
+            if (reloadTimeout) clearTimeout(reloadTimeout);
+            reloadTimeout = setTimeout(function() { window.location.reload(); }, 2500);
+            return;
+          }
+          if (data && data.__server_error) {
+            activeJobsSection.style.display = 'block';
+            activeJobsList.innerHTML = 
+              '<div style="color:var(--bad);font-weight:600;">⚠️ Unable to check active SEO jobs.</div>' +
+              '<div style="color:var(--muted);font-size:13px;">Website removal cannot continue safely. Please try again later.</div>';
+            removeBtn.textContent = 'Close';
+            removeBtn.className = 'btn btn-secondary';
+            removeBtn.disabled = true;
+            return;
+          }
+          if (data && data.has_active_jobs && data.active_jobs && data.active_jobs.length > 0) {
+            activeJobsSection.style.display = 'block';
+            let html = 
+              '<div style="color:var(--warn);font-weight:600;">🔄 Active Job Detected</div>' +
+              '<div style="font-size:13px;margin:6px 0;">This website currently has an active SEO process.</div>' +
+              '<div style="background:var(--bg);padding:8px 12px;border-radius:4px;font-size:12px;margin:6px 0;">' +
+              '  <strong>Job ID:</strong> ' + data.active_jobs[0].job_id + '<br>' +
+              '  <strong>Status:</strong> ' + (data.active_jobs[0].status || '').toUpperCase() +
+              '</div>' +
+              '<div style="color:var(--muted);font-size:12px;margin-top:4px;">Please stop the job before removing the website.</div>';
+            activeJobsList.innerHTML = html;
+            removeBtn.textContent = 'Stop Job and Remove';
+          }
+        })
+        .catch(function() {
+          activeJobsSection.style.display = 'block';
+          activeJobsList.innerHTML = 
+            '<div style="color:var(--bad);font-weight:600;">⚠️ Unable to check active SEO jobs.</div>' +
+            '<div style="color:var(--muted);font-size:13px;">Website removal cannot continue safely.</div>';
+          removeBtn.textContent = 'Close';
+          removeBtn.className = 'btn btn-secondary';
+          removeBtn.disabled = true;
+        });
+    });
+  });
+
+  cancelBtn.addEventListener('click', hideModal);
+  closeX.addEventListener('click', hideModal);
+
+  removeBtn.addEventListener('click', function() {
+    if (!currentWebsiteId) return;
+    var stopJobs = activeJobsSection.style.display === 'block';
+    var option = document.querySelector('input[name="removal_option"]:checked');
+    var removeAll = option ? (option.value === 'all') : false;
+
+    removeBtn.disabled = true;
+    removeBtn.textContent = 'Removing website...';
+
+    fetch('/website/' + currentWebsiteId + '/delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        stop_jobs: stopJobs,
+        remove_all_local_data: removeAll,
+      }),
+    })
+    .then(function(r) { return r.json().catch(function() { return {}; }); })
+    .then(function(data) {
+      if (data.ok) {
+        hideModal();
+        var row = document.querySelector('[data-remove="' + currentWebsiteId + '"]');
+        if (row) {
+          var tr = row.closest('tr');
+          if (tr) tr.style.transition = 'all 0.3s ease';
+          if (tr) tr.style.opacity = '0';
+          setTimeout(function() { if (tr) tr.remove(); }, 300);
+        }
+        var flash = document.createElement('div');
+        flash.className = 'flash success';
+        flash.textContent = data.message || '✅ Website removed successfully';
+        flash.style.animation = 'slideDown 0.3s ease-out';
+        var flashes = document.querySelector('.flashes');
+        if (flashes) {
+          flashes.insertBefore(flash, flashes.firstChild);
+        } else {
+          var main = document.querySelector('.content');
+          if (main) main.insertBefore(flash, main.firstChild);
+        }
+      } else {
+        removeBtn.disabled = false;
+        removeBtn.textContent = stopJobs ? 'Stop Job and Remove' : 'Remove Website';
+        alert(data.message || 'Unable to remove website.');
+      }
+    })
+    .catch(function() {
+      removeBtn.disabled = false;
+      removeBtn.textContent = stopJobs ? 'Stop Job and Remove' : 'Remove Website';
+      alert('Unable to remove website. Please try again.');
+    });
+  });
+
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) hideModal();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('active')) hideModal();
+  });
+
+  // Live status indicator update
+  function updateLiveStatus() {
+    const statusEl = document.getElementById('live-status');
+    if (statusEl) {
+      statusEl.style.color = '#2ecc71';
+      statusEl.textContent = '●';
+    }
+  }
+  updateLiveStatus();
+})();
+</script>
+{% endblock %}

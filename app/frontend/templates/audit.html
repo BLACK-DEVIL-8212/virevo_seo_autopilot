@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% block title %}Audit Log{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>📋 Audit Log</h2>
+    <div class="subtitle">Recent system activity across all phases</div>
+  </div>
+  <div>
+    <span class="badge badge-info">{{ logs|length }} entries</span>
+  </div>
+</div>
+
+<div class="card">
+  {% if logs %}
+  <div style="overflow-x: auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Phase</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in logs %}
+        {% set phase = l.details_json.phase if l.details_json and l.details_json.phase else "" %}
+        {% set badge_class = "badge-" + phase if phase else "badge-default" %}
+        <tr class="phase-{{ phase|default('other') }}">
+          <td><span class="log-time">{{ l.created_at|dt }}</span></td>
+          <td><strong>{{ l.actor }}</strong></td>
+          <td><span class="action-tag">{{ l.action }}</span></td>
+          <td><span class="target-text">{{ l.target|truncate(60) }}</span></td>
+          <td><span class="badge {{ badge_class }}">{{ phase|default('—') }}</span></td>
+          <td>
+            <details>
+              <summary style="cursor:pointer;color:var(--muted);font-size:12px;">View details</summary>
+              <pre style="margin-top:8px;max-height:150px;overflow-y:auto;font-size:11px;">{{ l.details_json|tojson(indent=2) }}</pre>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:40px 20px;">
+    <div style="font-size:48px;margin-bottom:16px;">📭</div>
+    <div class="desc" style="font-size:16px;">No audit entries yet.</div>
+    <div class="desc" style="margin-top:8px;">Activity will appear here as the system processes tasks.</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Enhanced table styling */
+table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+th {
+  background: var(--bg-2);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+td {
+  vertical-align: middle;
+  padding: 12px 10px;
+  transition: background 0.2s ease;
+}
+
+tr {
+  transition: all 0.2s ease;
+}
+
+tr:hover td {
+  background: var(--panel-2);
+}
+
+/* Phase-specific left borders with gradient */
+.phase-crawl td:first-child { 
+  border-left: 4px solid #4A90D9;
+  position: relative;
+}
+.phase-crawl td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: linear-gradient(180deg, #4A90D9, #6BA8E8);
+}
+
+.phase-seo_audit td:first-child { 
+  border-left: 4px solid #F5A623;
+}
+.phase-seo_audit td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: linear-gradient(180deg, #F5A623, #F7C14A);
+}
+
+.phase-keyword_research td:first-child { 
+  border-left: 4px solid #7ED321;
+}
+.phase-keyword_research td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: linear-gradient(180deg, #7ED321, #A5E85A);
+}
+
+.phase-planning td:first-child { 
+  border-left: 4px solid #BD10D9;
+}
+.phase-planning td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: linear-gradient(180deg, #BD10D9, #D44AE8);
+}
+
+.phase-deployment td:first-child { 
+  border-left: 4px solid #D0021B;
+}
+.phase-deployment td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: linear-gradient(180deg, #D0021B, #E84A5F);
+}
+
+.phase-other td:first-child { 
+  border-left: 4px solid var(--border);
+}
+
+/* Badge enhancements */
+.badge { 
+  padding: 4px 12px; 
+  border-radius: 12px; 
+  font-size: 11px; 
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  display: inline-block;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+.badge-crawl { 
+  background: linear-gradient(135deg, #4A90D9, #6BA8E8);
+  color: #fff;
+}
+.badge-seo_audit { 
+  background: linear-gradient(135deg, #F5A623, #F7C14A);
+  color: #fff;
+}
+.badge-keyword_research { 
+  background: linear-gradient(135deg, #7ED321, #A5E85A);
+  color: #fff;
+}
+.badge-planning { 
+  background: linear-gradient(135deg, #BD10D9, #D44AE8);
+  color: #fff;
+}
+.badge-deployment { 
+  background: linear-gradient(135deg, #D0021B, #E84A5F);
+  color: #fff;
+}
+.badge-default { 
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* Action tag styling */
+.action-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  font-family: "SF Mono", Consolas, monospace;
+}
+
+/* Target text styling */
+.target-text {
+  color: var(--text);
+  font-size: 13px;
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Log time styling */
+.log-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: "SF Mono", Consolas, monospace;
+}
+
+/* Details summary styling */
+details summary {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 0.2s ease;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  display: inline-block;
+}
+
+details summary:hover {
+  color: var(--accent-2);
+  background: var(--panel-2);
+}
+
+details pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text);
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: "SF Mono", Consolas, monospace;
+}
+
+details pre::-webkit-scrollbar {
+  width: 4px;
+}
+details pre::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+details pre::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+/* Empty state styling */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.empty-state-title {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.empty-state-subtitle {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 8px;
+  opacity: 0.8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  table {
+    font-size: 12px;
+  }
+  
+  td, th {
+    padding: 8px 6px;
+  }
+  
+  .target-text {
+    max-width: 100px;
+  }
+  
+  .badge {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+  
+  .action-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+  }
+}
+
+/* Scrollable table container */
+.card > div {
+  margin: -4px -8px;
+  padding: 4px 8px;
+}
+
+/* Striped rows alternative */
+tbody tr:nth-child(even) {
+  background: rgba(255,255,255,0.02);
+}
+
+tbody tr:nth-child(even):hover td {
+  background: var(--panel-2);
+}
+
+/* Phase indicator dot */
+.phase-crawl td:first-child::after,
+.phase-seo_audit td:first-child::after,
+.phase-keyword_research td:first-child::after,
+.phase-planning td:first-child::after,
+.phase-deployment td:first-child::after {
+  display: none;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}Changes · {{ website.name }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>🔄 Changes & Rollback</h2>
+    <div class="subtitle">
+      <span style="color:var(--accent-2);font-weight:600;">{{ website.name }}</span>
+      <span style="color:var(--muted);margin:0 8px;">·</span>
+      <span style="color:var(--muted);font-size:12px;">
+        {{ changes|length }} changes · {{ backups|length }} backups
+      </span>
+    </div>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;">
+    ← Back to Website
+  </a>
+</div>
+
+<div class="section-title" style="display:flex;align-items:center;gap:10px;margin-top:0;">
+  <span>📝 SEO Changes</span>
+  <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;">
+    {{ changes|length }} total
+  </span>
+</div>
+<div class="card" style="padding:0;overflow:hidden;">
+  {% if changes %}
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">ID</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Type</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Page</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Risk</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Status</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">When</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in changes %}
+        <tr style="transition:background 0.2s ease;">
+          <td style="padding:10px 14px;">
+            <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;font-family:monospace;">
+              {{ c.change_id[:8] }}
+            </code>
+          </td>
+          <td style="padding:10px 14px;">
+            <span class="tag" style="font-size:11px;padding:3px 12px;border-radius:12px;background:var(--bg);border-color:var(--border);">
+              {{ c.change_type }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;max-width:200px;">
+            <span style="display:inline-block;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text);">
+              {{ c.page_url[:50] }}{% if c.page_url|length > 50 %}…{% endif %}
+            </span>
+          </td>
+          <td style="padding:10px 14px;">
+            <span class="badge {{ c.risk|risk_badge }}" style="font-size:10px;padding:3px 14px;border-radius:12px;min-width:50px;text-align:center;display:inline-block;">
+              {{ c.risk|upper }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;">
+            <span class="badge {{ 'badge-success' if c.status == 'deployed' else 'badge-info' if c.status in ('proposed','approved','applied_locally','uploaded','production_verified') else 'badge-warning' if c.status in ('deployment_not_supported','skipped') else 'badge-high' }}"
+                  style="font-size:10px;padding:3px 14px;border-radius:12px;min-width:70px;text-align:center;display:inline-block;">
+              {{ c.status|upper }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;font-size:12px;color:var(--muted);font-family:monospace;">
+            {{ c.created_at|dt }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            {% if c.backup_id %}
+            <form method="POST" action="{{ url_for('rollback', change_id=c.id) }}" style="margin:0;" 
+                  onsubmit="return confirm('⚠️ Are you sure you want to rollback this change?\n\nThis will restore the previous version of the file.');">
+              <button class="btn btn-sm btn-danger" type="submit" style="padding:4px 14px;font-size:11px;border-radius:6px;display:inline-flex;align-items:center;gap:4px;">
+                ↩️ Rollback
+              </button>
+            </form>
+            {% else %}
+            <span style="font-size:11px;color:var(--muted);opacity:0.5;">No backup</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:40px 20px;">
+    <div style="font-size:40px;margin-bottom:12px;opacity:0.4;">📝</div>
+    <div class="desc" style="font-size:16px;font-weight:600;color:var(--text);">No SEO Changes Recorded</div>
+    <div class="desc" style="font-size:13px;margin-top:6px;max-width:400px;margin-left:auto;margin-right:auto;">
+      SEO changes will appear here once the AI begins optimizing your website.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="section-title" style="display:flex;align-items:center;gap:10px;margin-top:28px;">
+  <span>💾 Backups</span>
+  <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;">
+    {{ backups|length }} total
+  </span>
+</div>
+<div class="card" style="padding:0;overflow:hidden;">
+  {% if backups %}
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Change ID</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">File</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">SHA256</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Size</th>
+          <th style="padding:12px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in backups %}
+        <tr style="transition:background 0.2s ease;">
+          <td style="padding:10px 14px;">
+            <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;font-family:monospace;">
+              {{ b.change_id[:8] }}
+            </code>
+          </td>
+          <td style="padding:10px 14px;">
+            <span style="font-size:13px;font-family:monospace;color:var(--accent-2);">
+              {{ b.server_file }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;">
+            <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;font-family:monospace;color:var(--muted);">
+              {{ b.sha256_before[:12] }}…{{ b.sha256_before[-8:] }}
+            </code>
+          </td>
+          <td style="padding:10px 14px;font-size:13px;font-weight:600;color:var(--muted);">
+            {% if b.content_size < 1024 %}
+              {{ b.content_size }} B
+            {% elif b.content_size < 1048576 %}
+              {{ (b.content_size / 1024)|round(1) }} KB
+            {% else %}
+              {{ (b.content_size / 1048576)|round(1) }} MB
+            {% endif %}
+          </td>
+          <td style="padding:10px 14px;font-size:12px;color:var(--muted);font-family:monospace;">
+            {{ b.created_at|dt }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:40px 20px;">
+    <div style="font-size:40px;margin-bottom:12px;opacity:0.4;">💾</div>
+    <div class="desc" style="font-size:16px;font-weight:600;color:var(--text);">No Backups Available</div>
+    <div class="desc" style="font-size:13px;margin-top:6px;max-width:400px;margin-left:auto;margin-right:auto;">
+      Backups are created automatically before every SEO change for safe rollback.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<style>
+/* Enhanced table styling for this page */
+table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+thead th {
+  background: var(--bg-2);
+  font-weight: 700;
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+tbody tr {
+  transition: background 0.2s ease;
+}
+
+tbody tr:hover td {
+  background: var(--panel-2);
+}
+
+/* Status badge colors */
+.badge-success { background: rgba(46,204,113,0.15); color: var(--good); }
+.badge-info { background: rgba(79,125,255,0.15); color: var(--accent-2); }
+.badge-warning { background: rgba(241,196,15,0.15); color: var(--warn); }
+.badge-high { background: rgba(255,94,110,0.15); color: var(--bad); }
+
+/* Risk badge colors - matching existing risk_badge filter */
+.badge-critical { background: rgba(255,56,96,0.2); color: var(--crit); }
+.badge-high { background: rgba(255,94,110,0.15); color: var(--bad); }
+.badge-medium { background: rgba(241,196,15,0.15); color: var(--warn); }
+.badge-low { background: rgba(46,204,113,0.15); color: var(--good); }
+
+/* File size formatting */
+td code {
+  font-size: 11px;
+  background: var(--bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: "SF Mono", Consolas, monospace;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  table {
+    font-size: 12px;
+  }
+  
+  td, th {
+    padding: 8px 10px;
+  }
+  
+  .topbar h2 {
+    font-size: 18px;
+  }
+  
+  .topbar .subtitle {
+    font-size: 12px;
+  }
+  
+  .btn {
+    font-size: 12px;
+    padding: 6px 14px;
+  }
+  
+  td code {
+    font-size: 10px;
+  }
+}
+
+/* Subtle animation for new entries */
+@keyframes highlightRow {
+  0% { background: rgba(79,125,255,0.1); }
+  100% { background: transparent; }
+}
+
+tbody tr {
+  animation: highlightRow 0.6s ease-out;
+}
+
+/* Tooltip for rollback button */
+.btn-danger[type="submit"]:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 12px rgba(255,94,110,0.3);
+}
+
+/* Badge count styling */
+.section-title .badge {
+  font-size: 10px;
+  padding: 2px 12px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* Sticky header for table */
+.table-wrapper {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+</style>
+{% endblock %}

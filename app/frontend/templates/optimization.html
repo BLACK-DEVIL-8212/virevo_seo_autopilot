@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+{% block title %}{{ website.name }} · SEO Optimization · AI SEO Autopilot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>🚀 SEO Optimization</h2>
+    <div class="subtitle">
+      <span style="color:var(--accent-2);font-weight:600;">{{ website.name }}</span>
+      <span style="color:var(--muted);margin:0 6px;">·</span>
+      <code style="font-size:12px;color:var(--muted);">{{ website.root_url }}</code>
+      <span style="color:var(--muted);margin:0 6px;">·</span>
+      <span style="color:var(--muted);font-size:12px;">
+        {% if optimizations %}
+          {{ optimizations|length }} runs
+        {% else %}
+          No runs yet
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  <div class="row" style="gap:8px;flex-wrap:wrap;">
+    <form method="POST" action="{{ url_for('start_optimization', website_id=website.id) }}" style="display:inline" onsubmit="return confirm('⚠️ Start automatic SEO optimization?\n\nThis will analyze pages with low scores and apply improvements.');">
+      <button class="btn" type="submit" style="display:flex;align-items:center;gap:6px;padding:8px 24px;border-radius:8px;font-weight:700;">
+        ⚡ Run Optimization
+      </button>
+    </form>
+    <a class="btn btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;">
+      ← Back to Website
+    </a>
+  </div>
+</div>
+
+{% if optimizations %}
+  {% set latest = optimizations|first %}
+  <div class="grid grid-4" style="margin-bottom:16px;">
+    <div class="stat" style="border-left:3px solid var(--accent);">
+      <div class="label">📊 Latest Score</div>
+      <div class="value" style="color:{% if latest.score_after >= 70 %}var(--good){% elif latest.score_after >= 40 %}var(--warn){% else %}var(--bad){% endif %};">
+        {{ '%0.0f'|format(latest.score_after) }}
+      </div>
+      <div class="sub">
+        {% if latest.score_after > latest.score_before %}
+          ↑ +{{ '%0.0f'|format(latest.score_after - latest.score_before) }}
+        {% elif latest.score_after < latest.score_before %}
+          ↓ {{ '%0.0f'|format(latest.score_before - latest.score_after) }}
+        {% else %}
+          → No change
+        {% endif %}
+        · Target: {{ '%0.0f'|format(latest.target_score) }}
+      </div>
+    </div>
+    <div class="stat" style="border-left:3px solid var(--good);">
+      <div class="label">📄 Pages Optimized</div>
+      <div class="value" style="color:var(--good);">{{ latest.pages_optimized }}</div>
+      <div class="sub">{{ latest.changes_applied }} changes applied</div>
+    </div>
+    <div class="stat" style="border-left:3px solid var(--warn);">
+      <div class="label">🔄 Iterations</div>
+      <div class="value" style="color:var(--warn);">{{ latest.iteration }}/{{ latest.max_iterations }}</div>
+      <div class="sub">{{ latest.status|upper }}</div>
+    </div>
+    <div class="stat" style="border-left:3px solid var(--accent-2);">
+      <div class="label">⏱️ Started</div>
+      <div class="value" style="font-size:20px;color:var(--text);">{{ latest.created_at|dt }}</div>
+      <div class="sub">
+        {% if latest.finished_at %}
+          Finished: {{ latest.finished_at|dt }}
+        {% else %}
+          In progress...
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+<div class="section-title" style="display:flex;align-items:center;gap:10px;margin-top:0;">
+  <span>📋 Optimization History</span>
+  <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;">
+    {{ optimizations|length }} runs
+  </span>
+</div>
+<div class="card" style="padding:0;overflow:hidden;">
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">ID</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Started</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Finished</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Before</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">After</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Target</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Pages</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Changes</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Iterations</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in optimizations %}
+        <tr style="transition:background 0.2s ease;">
+          <td style="padding:10px 14px;">
+            <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;">{{ o.id[:8] }}</code>
+          </td>
+          <td style="padding:10px 14px;font-size:12px;color:var(--muted);font-family:monospace;white-space:nowrap;">
+            {{ o.created_at|dt }}
+          </td>
+          <td style="padding:10px 14px;font-size:12px;color:var(--muted);font-family:monospace;white-space:nowrap;">
+            {{ o.finished_at|dt or '—' }}
+          </td>
+          <td style="padding:10px 14px;font-weight:700;color:var(--bad);">
+            {{ '%0.0f'|format(o.score_before) }}
+          </td>
+          <td style="padding:10px 14px;font-weight:700;color:{% if o.score_after >= 70 %}var(--good){% elif o.score_after >= 40 %}var(--warn){% else %}var(--bad){% endif %};">
+            {{ '%0.0f'|format(o.score_after) }}
+          </td>
+          <td style="padding:10px 14px;font-weight:700;color:var(--accent-2);">
+            {{ '%0.0f'|format(o.target_score) }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;font-weight:600;color:var(--accent-2);">
+            {{ o.pages_optimized }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;font-weight:600;color:var(--good);">
+            {{ o.changes_applied }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            <span style="display:inline-block;background:var(--bg);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;color:var(--muted);">
+              {{ o.iteration }}/{{ o.max_iterations }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;">
+            <span class="badge {{ 'badge-success' if o.status == 'completed' else 'badge-warning' if o.status == 'partial' else 'badge-info' if o.status == 'running' else 'badge-high' }}"
+                  style="font-size:10px;padding:3px 14px;border-radius:12px;min-width:70px;text-align:center;display:inline-block;">
+              {{ o.status|upper }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if page_opts %}
+<div class="section-title" style="display:flex;align-items:center;gap:10px;margin-top:28px;">
+  <span>📄 Latest Optimization - Page Results</span>
+  <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;">
+    {{ page_opts|length }} pages
+  </span>
+</div>
+<div class="card" style="padding:0;overflow:hidden;">
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:200px;">Page</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">Original Score</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">Optimized Score</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">Change</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">Status</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">Changes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for po in page_opts %}
+        <tr style="transition:background 0.2s ease;">
+          <td style="padding:10px 14px;max-width:220px;">
+            <a href="{{ po.page_url }}" target="_blank" style="color:var(--accent-2);display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ po.page_url }}">
+              {{ po.page_url[:60] }}{% if po.page_url|length > 60 %}…{% endif %}
+            </a>
+          </td>
+          <td style="padding:10px 14px;text-align:center;font-weight:700;color:var(--bad);">
+            {{ '%0.0f'|format(po.original_score) }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;font-weight:700;color:{% if po.optimized_score >= 70 %}var(--good){% elif po.optimized_score >= 40 %}var(--warn){% else %}var(--bad){% endif %};">
+            {{ '%0.0f'|format(po.optimized_score) }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            {% set diff = po.optimized_score - po.original_score %}
+            <span style="font-weight:700;color:{% if diff > 0 %}var(--good){% elif diff < 0 %}var(--bad){% else %}var(--muted){% endif %};">
+              {% if diff > 0 %}↑ +{{ '%0.0f'|format(diff) }}{% elif diff < 0 %}↓ {{ '%0.0f'|format(diff|abs) }}{% else %}→ 0{% endif %}
+            </span>
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            <span class="badge {{ 'badge-success' if po.status == 'improved' else 'badge-neutral' if po.status == 'skipped' else 'badge-high' }}"
+                  style="font-size:10px;padding:2px 12px;border-radius:12px;min-width:60px;display:inline-block;">
+              {{ po.status|upper }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;text-align:center;font-weight:600;color:var(--accent-2);">
+            {{ po.changes_applied|length if po.changes_applied else 0 }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card" style="border:2px dashed var(--border);background:var(--bg);">
+  <div style="text-align:center;padding:50px 20px;">
+    <div style="font-size:56px;margin-bottom:16px;opacity:0.5;">🚀</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:8px;color:var(--text);">No Optimization Runs Yet</div>
+    <div class="desc" style="font-size:14px;max-width:450px;margin:0 auto 16px;">
+      Run an analysis first, then start automatic SEO optimization to improve your website's performance.
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('start_crawl', website_id=website.id) }}" style="padding:10px 28px;border-radius:8px;">
+        🔍 Run Analysis
+      </a>
+      <a class="btn btn-secondary" href="{{ url_for('website_issues', website_id=website.id) }}" style="padding:10px 28px;border-radius:8px;">
+        View Issues
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="section-title" style="margin-top:28px;">🧭 Navigation</div>
+<div class="card" style="padding:12px 16px;">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:8px;">
+    <a class="btn btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;justify-content:center;padding:8px 12px;border-radius:6px;font-size:12px;">
+      📊 Overview
+    </a>
+    <a class="btn btn-secondary" href="{{ url_for('website_issues', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;justify-content:center;padding:8px 12px;border-radius:6px;font-size:12px;">
+      🔍 Issues
+    </a>
+    <a class="btn btn-secondary" href="{{ url_for('website_keywords', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;justify-content:center;padding:8px 12px;border-radius:6px;font-size:12px;">
+      🔑 Keywords
+    </a>
+    <a class="btn btn-secondary" href="{{ url_for('website_plan', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;justify-content:center;padding:8px 12px;border-radius:6px;font-size:12px;">
+      📋 Plan
+    </a>
+    <a class="btn btn-secondary" href="{{ url_for('website_changes', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;justify-content:center;padding:8px 12px;border-radius:6px;font-size:12px;">
+      🔄 Changes
+    </a>
+    <a class="btn btn-secondary" href="{{ url_for('website_monitoring', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;justify-content:center;padding:8px 12px;border-radius:6px;font-size:12px;">
+      📊 Monitor
+    </a>
+    <a class="btn btn-secondary" href="{{ url_for('website_settings', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;justify-content:center;padding:8px 12px;border-radius:6px;font-size:12px;">
+      ⚙️ Settings
+    </a>
+  </div>
+</div>
+
+<style>
+/* Stat cards with colored borders */
+.stat {
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.stat:hover {
+  transform: translateY(-2px);
+  border-color: rgba(79,125,255,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+/* Table improvements */
+table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+thead th {
+  background: var(--bg-2);
+  font-weight: 700;
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+tbody tr:hover td {
+  background: var(--panel-2);
+}
+
+/* Badge colors */
+.badge-success { background: rgba(46,204,113,0.15); color: var(--good); }
+.badge-warning { background: rgba(241,196,15,0.15); color: var(--warn); }
+.badge-info { background: rgba(79,125,255,0.15); color: var(--accent-2); }
+.badge-high { background: rgba(255,94,110,0.15); color: var(--bad); }
+.badge-neutral { background: var(--panel-2); color: var(--muted); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .topbar .row {
+    width: 100%;
+  }
+  
+  .topbar .row .btn {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  table {
+    font-size: 12px;
+  }
+  
+  td, th {
+    padding: 8px 10px;
+  }
+  
+  .stat .value {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 600px) {
+  .grid-4 {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  
+  .stat {
+    padding: 12px 14px;
+  }
+  
+  .stat .value {
+    font-size: 20px;
+  }
+  
+  .card {
+    padding: 12px 14px;
+  }
+  
+  .navigation-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Navigation grid */
+.navigation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.navigation-grid .btn {
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* Scrollable table container */
+.card > div {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.card > div::-webkit-scrollbar {
+  width: 6px;
+}
+
+.card > div::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+.card > div::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.card > div::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+</style>
+{% endblock %}

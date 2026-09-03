@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}AI Plan · {{ website.name }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>🧠 AI Optimization Plan</h2>
+    <div class="subtitle">
+      <span style="color:var(--accent-2);font-weight:600;">{{ website.name }}</span>
+      <span style="color:var(--muted);margin:0 6px;">·</span>
+      <span style="color:var(--muted);font-size:12px;">
+        {% if plans %}
+          {{ plans|length }} plan{% if plans|length > 1 %}s{% endif %}
+        {% else %}
+          No plans yet
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;">
+    ← Back to Website
+  </a>
+</div>
+
+{% for plan in plans %}
+<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+  <!-- Plan Header -->
+  <div style="padding:18px 24px;background:linear-gradient(135deg, var(--panel), var(--panel-2));border-bottom:1px solid var(--border);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h3 style="margin:0 0 4px 0;font-size:18px;font-weight:700;color:var(--text);">
+          🎯 {{ plan.title }}
+        </h3>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="font-size:12px;color:var(--muted);">
+            📅 Created: {{ plan.created_at|dt }}
+          </span>
+          <span style="font-size:12px;color:var(--muted);">
+            📋 Status: 
+            <span class="badge {{ 'badge-success' if plan.status == 'completed' else 'badge-info' if plan.status == 'active' else 'badge-warning' if plan.status == 'pending' else 'badge-neutral' }}" 
+                  style="font-size:10px;padding:2px 14px;border-radius:12px;">
+              {{ plan.status|upper }}
+            </span>
+          </span>
+          {% set p = plan.actions_json or {} %}
+          {% if p.pages is defined %}
+            <span style="font-size:12px;color:var(--muted);">
+              📄 {{ p.pages|length }} page{% if p.pages|length > 1 %}s{% endif %}
+            </span>
+            {% set total_actions = p.pages|sum(attribute='actions|length') %}
+            {% if total_actions %}
+            <span style="font-size:12px;color:var(--muted);">
+              ⚡ {{ total_actions }} action{% if total_actions > 1 %}s{% endif %}
+            </span>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% if plan.status != 'completed' %}
+      <div style="display:flex;gap:8px;">
+        <span class="badge badge-info" style="font-size:10px;padding:4px 16px;border-radius:20px;">🔄 In Progress</span>
+      </div>
+      {% else %}
+      <div style="display:flex;gap:8px;">
+        <span class="badge badge-success" style="font-size:10px;padding:4px 16px;border-radius:20px;">✅ Complete</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Plan Body -->
+  <div style="padding:20px 24px;">
+    {% set p = plan.actions_json or {} %}
+    {% if p.pages is defined %}
+      {% for page in p.pages %}
+      <div style="margin: 0 0 16px 0; padding: 16px 20px; background: var(--bg); border-radius: 10px; border: 1px solid var(--border); transition: all 0.2s ease;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+          <div style="flex:1;">
+            <h4 style="margin:0;font-size:15px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px;">
+              <span>📄</span>
+              <a href="{{ page.page_url }}" target="_blank" style="color:var(--accent-2);word-break:break-all;">
+                {{ page.page_url }}
+              </a>
+            </h4>
+            {% if page.summary %}
+            <div class="desc" style="margin: 4px 0 0; font-size:13px;color:var(--muted);">
+              {{ page.summary }}
+            </div>
+            {% endif %}
+          </div>
+          {% if page.actions %}
+          <span class="badge badge-info" style="font-size:10px;padding:2px 12px;border-radius:12px;white-space:nowrap;">
+            {{ page.actions|length }} action{% if page.actions|length > 1 %}s{% endif %}
+          </span>
+          {% endif %}
+        </div>
+
+        {% if page.actions %}
+        <div style="overflow-x:auto;margin-top:12px;">
+          <table style="margin:0;font-size:12px;">
+            <thead>
+              <tr>
+                <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;min-width:80px;">Type</th>
+                <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;min-width:100px;">Current</th>
+                <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;min-width:120px;">Proposed</th>
+                <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;">Reason</th>
+                <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;text-align:center;min-width:70px;">Risk</th>
+                <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;text-align:center;min-width:80px;">Confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in page.actions %}
+              <tr style="transition:background 0.15s ease;">
+                <td style="padding:8px 12px;">
+                  <span class="tag" style="font-size:10px;padding:2px 10px;border-radius:10px;background:var(--bg);border-color:var(--border);">
+                    {{ a.type }}
+                  </span>
+                </td>
+                <td style="padding:8px 12px;">
+                  <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;display:inline-block;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ a.current or '' }}">
+                    {{ (a.current or '—')[:40] }}{% if (a.current or '').length > 40 %}…{% endif %}
+                  </code>
+                </td>
+                <td style="padding:8px 12px;">
+                  <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;display:inline-block;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--good);" title="{{ a.value|string or '' }}">
+                    {{ (a.value|string)[:60] }}{% if (a.value|string).length > 60 %}…{% endif %}
+                  </code>
+                </td>
+                <td style="padding:8px 12px;font-size:12px;color:var(--muted);max-width:150px;">
+                  <span style="display:inline-block;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ a.reason }}">
+                    {{ a.reason[:50] }}{% if a.reason|length > 50 %}…{% endif %}
+                  </span>
+                </td>
+                <td style="padding:8px 12px;text-align:center;">
+                  <span class="badge {{ a.risk|risk_badge }}" 
+                        style="font-size:10px;padding:2px 12px;border-radius:12px;min-width:50px;display:inline-block;text-align:center;">
+                    {{ a.risk|upper }}
+                  </span>
+                </td>
+                <td style="padding:8px 12px;text-align:center;">
+                  <div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+                    <div style="width:40px;height:4px;background:var(--bg-2);border-radius:999px;overflow:hidden;">
+                      <div style="height:100%;width:{{ '%0.0f' % (a.confidence * 100) }}%;background:linear-gradient(90deg, var(--accent), var(--accent-2));border-radius:999px;"></div>
+                    </div>
+                    <span style="font-size:11px;font-weight:600;color:var(--muted);min-width:32px;">
+                      {{ '%0.0f' % (a.confidence * 100) }}%
+                    </span>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div style="text-align:center;padding:20px;color:var(--muted);">
+        <div style="font-size:28px;margin-bottom:8px;opacity:0.3;">📋</div>
+        <div style="font-size:14px;">No page data available in this plan</div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card" style="border:2px dashed var(--border);background:var(--bg);">
+  <div style="text-align:center;padding:50px 20px;">
+    <div style="font-size:56px;margin-bottom:16px;opacity:0.5;">🧠</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:8px;color:var(--text);">No Optimization Plans Yet</div>
+    <div class="desc" style="font-size:14px;max-width:450px;margin:0 auto 16px;">
+      Run an analysis to generate an AI-optimized plan for your website.
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('start_crawl', website_id=website.id) }}" style="padding:10px 28px;border-radius:8px;">
+        🔍 Run Analysis
+      </a>
+      <a class="btn btn-secondary" href="{{ url_for('website_issues', website_id=website.id) }}" style="padding:10px 28px;border-radius:8px;">
+        View Issues
+      </a>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<style>
+/* Plan card styling */
+.card {
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(79,125,255,0.15);
+}
+
+/* Page item styling */
+.page-item {
+  margin: 0 0 16px 0;
+  padding: 16px 20px;
+  background: var(--bg);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+}
+
+.page-item:hover {
+  border-color: rgba(79,125,255,0.2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Table improvements */
+table {
+  border-radius: 6px;
+  overflow: hidden;
+  width: 100%;
+}
+
+thead th {
+  background: var(--bg-2);
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:hover td {
+  background: var(--panel-2);
+}
+
+/* Badge colors */
+.badge-success { background: rgba(46,204,113,0.15); color: var(--good); }
+.badge-info { background: rgba(79,125,255,0.15); color: var(--accent-2); }
+.badge-warning { background: rgba(241,196,15,0.15); color: var(--warn); }
+.badge-neutral { background: var(--panel-2); color: var(--muted); }
+.badge-high { background: rgba(255,94,110,0.15); color: var(--bad); }
+.badge-critical { background: rgba(255,56,96,0.18); color: var(--crit); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .topbar .btn {
+    align-self: flex-start;
+  }
+  
+  .card {
+    padding: 0;
+  }
+  
+  .card > div:first-child {
+    padding: 14px 16px;
+  }
+  
+  .card > div:last-child {
+    padding: 14px 16px;
+  }
+  
+  table {
+    font-size: 11px;
+  }
+  
+  td, th {
+    padding: 6px 8px;
+  }
+  
+  .page-item {
+    padding: 12px 14px;
+  }
+  
+  h4 a {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 600px) {
+  .card > div:first-child {
+    flex-direction: column;
+  }
+  
+  .card > div:first-child > div:last-child {
+    align-self: flex-start;
+  }
+  
+  /* Hide less important columns on mobile */
+  table th:nth-child(2),
+  table td:nth-child(2),
+  table th:nth-child(4),
+  table td:nth-child(4) {
+    display: none;
+  }
+}
+
+/* Confidence bar animation */
+td div[style*="width"] {
+  transition: width 0.6s ease;
+}
+
+/* Code truncation with tooltip */
+code[title] {
+  cursor: help;
+}
+
+/* Action count badge */
+.action-count {
+  font-size: 10px;
+  padding: 2px 12px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* Scrollable table container */
+.page-item > div {
+  overflow-x: auto;
+}
+
+.page-item > div::-webkit-scrollbar {
+  height: 4px;
+}
+
+.page-item > div::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+.page-item > div::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+</style>
+{% endblock %}

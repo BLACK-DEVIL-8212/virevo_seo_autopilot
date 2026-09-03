@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Connect Website · AI SEO Autopilot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>🔗 Connect Website</h2>
+    <div class="subtitle">Choose how to connect your website for SEO optimization</div>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('dashboard') }}" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;">
+    ← Back to Dashboard
+  </a>
+</div>
+
+<div class="grid grid-2" style="align-items:start;">
+  <div>
+    <div class="card" style="padding:24px 28px;">
+      <h3 style="margin:0 0 4px 0;font-size:18px;display:flex;align-items:center;gap:8px;">
+        <span>📝</span> Website Details
+      </h3>
+      <div class="desc" style="margin-bottom:20px;">Enter your website information to begin AI-powered SEO optimization.</div>
+      
+      <form method="POST">
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px;">
+            Website Name <span style="color:var(--bad);">*</span>
+          </label>
+          <input type="text" name="name" placeholder="My Business Site" required style="padding:10px 14px;border-radius:8px;font-size:14px;">
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px;">
+            Root URL <span style="color:var(--bad);">*</span>
+          </label>
+          <input type="url" name="root_url" placeholder="https://example.com" required style="padding:10px 14px;border-radius:8px;font-size:14px;">
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px;">
+            Connection Method <span style="color:var(--bad);">*</span>
+          </label>
+          <select name="connection_type" id="connection_type" onchange="toggleFields()" style="padding:10px 14px;border-radius:8px;font-size:14px;cursor:pointer;">
+            <option value="public_url">🌐 Public URL only (analysis)</option>
+            <option value="ftp">📁 FTP (read/write)</option>
+            <option value="sftp">🔒 SFTP (read/write, recommended)</option>
+            <option value="ssh">🔑 SSH (read + optional commands)</option>
+          </select>
+        </div>
+
+        <div id="host-fields" style="display:none;padding:16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">
+            🔧 Server Connection Details
+          </div>
+          <div class="row" style="gap:12px;margin-bottom:12px;">
+            <div style="flex:2;">
+              <label style="font-weight:500;font-size:12px;color:var(--muted);margin-bottom:4px;">Host</label>
+              <input name="host" placeholder="ftp.example.com" style="padding:9px 12px;border-radius:6px;font-size:13px;">
+            </div>
+            <div style="flex:1;">
+              <label style="font-weight:500;font-size:12px;color:var(--muted);margin-bottom:4px;">Port</label>
+              <input name="port" placeholder="21 / 22" style="padding:9px 12px;border-radius:6px;font-size:13px;">
+            </div>
+          </div>
+          <div class="row" style="gap:12px;margin-bottom:12px;">
+            <div style="flex:1;">
+              <label style="font-weight:500;font-size:12px;color:var(--muted);margin-bottom:4px;">Username</label>
+              <input name="username" placeholder="username" style="padding:9px 12px;border-radius:6px;font-size:13px;">
+            </div>
+            <div style="flex:1;">
+              <label style="font-weight:500;font-size:12px;color:var(--muted);margin-bottom:4px;">Password</label>
+              <input name="password" type="password" placeholder="••••••••" style="padding:9px 12px;border-radius:6px;font-size:13px;">
+            </div>
+          </div>
+          <div>
+            <label style="font-weight:500;font-size:12px;color:var(--muted);margin-bottom:4px;">SSH Private Key (optional, SFTP/SSH only)</label>
+            <textarea name="private_key" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="min-height:80px;padding:10px 12px;border-radius:6px;font-size:12px;font-family:monospace;"></textarea>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">Paste your private key including the BEGIN and END lines.</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px;">
+            Website Root Path (on server)
+          </label>
+          <input name="web_root" placeholder="/public_html  (leave blank to auto-detect)" style="padding:10px 14px;border-radius:8px;font-size:13px;">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">The directory where your website files are stored on the server.</div>
+        </div>
+
+        <button class="btn" type="submit" style="width:100%;padding:12px;font-size:16px;font-weight:700;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:8px;">
+          🚀 Connect Website
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div>
+    <div class="card" style="padding:24px 28px;">
+      <h3 style="margin:0 0 16px 0;font-size:16px;display:flex;align-items:center;gap:8px;">
+        <span>📚</span> Connection Modes Explained
+      </h3>
+      
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="padding:14px 16px;background:var(--bg);border-radius:8px;border-left:3px solid var(--accent);">
+          <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;">
+            <span>🌐</span> Public URL only
+          </div>
+          <div style="color:var(--muted);font-size:13px;margin-top:4px;">Crawls and analyzes the public site. Cannot modify files.</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;opacity:0.7;">Read-only · No credentials required</div>
+        </div>
+        
+        <div style="padding:14px 16px;background:var(--bg);border-radius:8px;border-left:3px solid var(--warn);">
+          <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;">
+            <span>📁</span> FTP / SFTP / SSH
+          </div>
+          <div style="color:var(--muted);font-size:13px;margin-top:4px;">Full read/write access for autonomous modifications and backups.</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;opacity:0.7;">Read/Write · Credentials required</div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;padding:14px 16px;background:rgba(79,125,255,0.06);border-radius:8px;border:1px solid rgba(79,125,255,0.1);">
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:18px;">🔒</span>
+          <div>
+            <div style="font-weight:600;font-size:13px;color:var(--accent-2);">Security</div>
+            <div class="desc" style="font-size:12px;margin-top:2px;">
+              Credentials are encrypted at rest using Fernet. The AI never modifies files outside the configured website root.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;padding:14px 16px;background:rgba(46,204,113,0.06);border-radius:8px;border:1px solid rgba(46,204,113,0.1);">
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:18px;">💡</span>
+          <div>
+            <div style="font-weight:600;font-size:13px;color:var(--good);">Recommendation</div>
+            <div class="desc" style="font-size:12px;margin-top:2px;">
+              For full SEO optimization capabilities, we recommend using <strong>SFTP</strong> or <strong>SSH</strong> to enable automatic file modifications and rollback capabilities.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:16px 20px;border:1px solid rgba(241,196,15,0.2);background:rgba(241,196,15,0.04);">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <span style="font-size:18px;">⚡</span>
+        <div>
+          <div style="font-weight:600;font-size:13px;color:var(--warn);">What happens next?</div>
+          <div class="desc" style="font-size:12px;margin-top:4px;line-height:1.6;">
+            1. Website is crawled and analyzed<br>
+            2. AI identifies optimization opportunities<br>
+            3. Changes are proposed and applied automatically<br>
+            4. Performance is monitored and reported
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* Form styling improvements */
+input, select, textarea {
+  transition: all 0.2s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,125,255,0.12);
+  outline: none;
+}
+
+input:hover, select:hover, textarea:hover {
+  border-color: var(--accent-2);
+}
+
+/* Styling for the server fields toggle */
+#host-fields {
+  transition: all 0.3s ease;
+}
+
+#host-fields .row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#host-fields .row > div {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* Button hover effect */
+.btn[type="submit"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(79,125,255,0.3);
+}
+
+/* Card hover effect */
+.card {
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(79,125,255,0.15);
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  
+  #host-fields .row {
+    flex-direction: column;
+  }
+  
+  #host-fields .row > div {
+    min-width: unset;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .topbar .btn {
+    align-self: flex-start;
+  }
+}
+</style>
+
+<script>
+// Enhanced toggle with animation
+function toggleFields(){
+  var sel = document.getElementById('connection_type');
+  var fields = document.getElementById('host-fields');
+  if (sel.value === 'public_url') {
+    fields.style.display = 'none';
+  } else {
+    fields.style.display = 'block';
+    // Small animation effect
+    fields.style.animation = 'slideDown 0.3s ease-out';
+  }
+}
+
+// Run on page load
+document.addEventListener('DOMContentLoaded', function() {
+  toggleFields();
+  
+  // Add visual feedback for required fields
+  var requiredInputs = document.querySelectorAll('input[required], select[required]');
+  requiredInputs.forEach(function(input) {
+    input.addEventListener('invalid', function() {
+      this.style.borderColor = 'var(--bad)';
+      this.style.boxShadow = '0 0 0 3px rgba(255,94,110,0.15)';
+    });
+    input.addEventListener('input', function() {
+      if (this.validity.valid) {
+        this.style.borderColor = 'var(--good)';
+        this.style.boxShadow = '0 0 0 3px rgba(46,204,113,0.12)';
+        setTimeout(function() {
+          input.style.borderColor = '';
+          input.style.boxShadow = '';
+        }, 1500);
+      }
+    });
+  });
+});
+
+// Also handle when select changes
+document.getElementById('connection_type').addEventListener('change', function() {
+  // Clear validation state
+  this.style.borderColor = '';
+  this.style.boxShadow = '';
+});
+</script>
+{% endblock %}

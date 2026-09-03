@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}Monitoring · {{ website.name }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>📊 Monitoring</h2>
+    <div class="subtitle">
+      <span style="color:var(--accent-2);font-weight:600;">{{ website.name }}</span>
+      <span style="color:var(--muted);margin:0 6px;">·</span>
+      <span style="color:var(--muted);font-size:12px;">
+        {% if snapshots %}
+          {{ snapshots|length }} snapshots
+        {% else %}
+          No data yet
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('website_detail', website_id=website.id) }}" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;">
+    ← Back to Website
+  </a>
+</div>
+
+{% if snapshots %}
+<div class="grid grid-4" style="margin-bottom:16px;">
+  {% set latest = snapshots|first %}
+  <div class="stat" style="border-left:3px solid var(--accent);">
+    <div class="label">👁️ Impressions</div>
+    <div class="value" style="color:var(--accent-2);">{{ latest.impressions|default(0)|int }}</div>
+    <div class="sub">Latest snapshot</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--good);">
+    <div class="label">🖱️ Clicks</div>
+    <div class="value" style="color:var(--good);">{{ latest.clicks|default(0)|int }}</div>
+    <div class="sub">Latest snapshot</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--warn);">
+    <div class="label">📈 CTR</div>
+    <div class="value" style="color:var(--warn);">{{ '%0.1f' % (latest.ctr|default(0)) }}%</div>
+    <div class="sub">Click-through rate</div>
+  </div>
+  <div class="stat" style="border-left:3px solid var(--bad);">
+    <div class="label">📌 Avg Position</div>
+    <div class="value" style="color:{% if latest.average_position|default(0) < 5 %}var(--good){% elif latest.average_position|default(0) < 15 %}var(--warn){% else %}var(--bad){% endif %};">
+      {{ '%0.1f' % (latest.average_position|default(0)) }}
+    </div>
+    <div class="sub">Lower is better</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="padding:0;overflow:hidden;">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div class="section-title" style="margin:0;">📈 Performance Snapshots</div>
+    {% if snapshots %}
+      <span style="font-size:11px;color:var(--muted);">
+        Showing latest {{ snapshots|length }} records
+      </span>
+    {% endif %}
+  </div>
+  {% if snapshots %}
+  <div style="overflow-x:auto;">
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:150px;">Page URL</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">👁️ Impressions</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">🖱️ Clicks</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">📈 CTR</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">📌 Position</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">✅ Indexed</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">⚠️ Errors</th>
+          <th style="padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;min-width:100px;">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in snapshots %}
+        <tr style="transition:background 0.2s ease;">
+          <td style="padding:10px 14px;max-width:180px;">
+            <span style="display:inline-block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text);" title="{{ s.page_url }}">
+              {{ s.page_url[:50] }}{% if s.page_url|length > 50 %}…{% endif %}
+            </span>
+          </td>
+          <td style="padding:10px 14px;text-align:center;font-weight:600;color:var(--accent-2);">
+            {{ s.impressions|default(0)|int }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;font-weight:600;color:var(--good);">
+            {{ s.clicks|default(0)|int }}
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            <span class="badge {% if s.ctr|default(0) > 5 %}badge-success{% elif s.ctr|default(0) > 2 %}badge-warning{% else %}badge-neutral{% endif %}" 
+                  style="font-size:10px;padding:2px 12px;border-radius:12px;min-width:50px;display:inline-block;">
+              {{ '%0.2f' % (s.ctr|default(0)) }}%
+            </span>
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            <span style="font-weight:700;color:{% if s.average_position|default(0) < 5 %}var(--good){% elif s.average_position|default(0) < 15 %}var(--warn){% else %}var(--bad){% endif %};">
+              {{ '%0.1f' % (s.average_position|default(0)) }}
+            </span>
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            {% if s.indexed %}
+              <span class="badge badge-success" style="font-size:10px;padding:2px 12px;border-radius:12px;">✅ Yes</span>
+            {% else %}
+              <span class="badge badge-high" style="font-size:10px;padding:2px 12px;border-radius:12px;">❌ No</span>
+            {% endif %}
+          </td>
+          <td style="padding:10px 14px;text-align:center;">
+            {% if s.crawl_errors|default(0) > 0 %}
+              <span class="badge badge-critical" style="font-size:10px;padding:2px 12px;border-radius:12px;">
+                {{ s.crawl_errors }}
+              </span>
+            {% else %}
+              <span style="color:var(--muted);font-size:12px;">0</span>
+            {% endif %}
+          </td>
+          <td style="padding:10px 14px;font-size:12px;color:var(--muted);font-family:monospace;white-space:nowrap;">
+            {{ s.snapshot_date|dt }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:60px 20px;">
+    <div style="font-size:48px;margin-bottom:12px;opacity:0.4;">📊</div>
+    <div style="font-size:18px;font-weight:600;color:var(--text);margin-bottom:6px;">No Performance Data Yet</div>
+    <div class="desc" style="font-size:14px;max-width:500px;margin:0 auto;line-height:1.6;">
+      Connect a Search Performance provider in Settings to begin collecting data.
+      <br>Supported integrations: Google Search Console, Google Analytics, and more.
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+      <span class="badge badge-info" style="font-size:11px;padding:4px 16px;">🔗 Google Search Console</span>
+      <span class="badge badge-info" style="font-size:11px;padding:4px 16px;">📊 Google Analytics</span>
+      <span class="badge badge-info" style="font-size:11px;padding:4px 16px;">📈 Plausible</span>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 12px 0;font-size:16px;display:flex;align-items:center;gap:8px;">
+    🔌 Provider Integrations
+  </h3>
+  <div class="desc" style="margin-bottom:16px;font-size:13px;line-height:1.6;">
+    Performance data is collected through pluggable provider adapters.
+    The application runs without these integrations; they enhance monitoring
+    when credentials are available.
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;">
+    <div style="padding:12px 16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
+      <div style="font-weight:600;font-size:13px;color:var(--text);">🔍 Search Performance</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">Google Search Console</div>
+    </div>
+    <div style="padding:12px 16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
+      <div style="font-weight:600;font-size:13px;color:var(--text);">📊 Analytics</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">Google Analytics, Plausible</div>
+    </div>
+    <div style="padding:12px 16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
+      <div style="font-weight:600;font-size:13px;color:var(--text);">📈 Trends</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">Google Trends, SerpAPI</div>
+    </div>
+    <div style="padding:12px 16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
+      <div style="font-weight:600;font-size:13px;color:var(--text);">🏆 Competitor</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">SerpAPI, Custom</div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* Stat cards with colored borders */
+.stat {
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.stat:hover {
+  transform: translateY(-2px);
+  border-color: rgba(79,125,255,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+/* Table improvements */
+table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+thead th {
+  background: var(--bg-2);
+  font-weight: 700;
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+tbody tr:hover td {
+  background: var(--panel-2);
+}
+
+/* Badge colors */
+.badge-success { background: rgba(46,204,113,0.15); color: var(--good); }
+.badge-warning { background: rgba(241,196,15,0.15); color: var(--warn); }
+.badge-neutral { background: var(--panel-2); color: var(--muted); }
+.badge-high { background: rgba(255,94,110,0.15); color: var(--bad); }
+.badge-critical { background: rgba(255,56,96,0.18); color: var(--crit); }
+.badge-info { background: rgba(79,125,255,0.15); color: var(--accent-2); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .topbar .btn {
+    align-self: flex-start;
+  }
+  
+  table {
+    font-size: 12px;
+  }
+  
+  td, th {
+    padding: 8px 10px;
+  }
+  
+  .stat .value {
+    font-size: 22px;
+  }
+  
+  /* Hide less important columns on mobile */
+  table th:nth-child(6),
+  table td:nth-child(6),
+  table th:nth-child(7),
+  table td:nth-child(7) {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .grid-4 {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  
+  .stat {
+    padding: 12px 14px;
+  }
+  
+  .stat .value {
+    font-size: 20px;
+  }
+  
+  /* Hide more columns on very small screens */
+  table th:nth-child(4),
+  table td:nth-child(4),
+  table th:nth-child(5),
+  table td:nth-child(5) {
+    display: none;
+  }
+  
+  .card {
+    padding: 12px 14px;
+  }
+  
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Provider grid */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+/* Scrollable table container */
+.card > div {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.card > div::-webkit-scrollbar {
+  width: 6px;
+}
+
+.card > div::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+.card > div::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.card > div::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Tooltip for truncated URLs */
+td span[title] {
+  cursor: help;
+}
+</style>
+{% endblock %}

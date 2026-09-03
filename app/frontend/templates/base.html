@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AI SEO Autopilot{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <style>
+    /* Enhanced base styles */
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s ease;
+    }
+    
+    .sidebar h1 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    
+    .sidebar h1::before {
+      content: '🚀';
+      font-size: 22px;
+    }
+    
+    .nav li a {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    
+    .nav li a::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 0;
+      background: var(--accent);
+      border-radius: 0 4px 4px 0;
+      transition: height 0.3s ease;
+    }
+    
+    .nav li a.active::before {
+      height: 60%;
+    }
+    
+    .nav li a.active {
+      background: var(--panel-2);
+      color: var(--text);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    
+    .nav li a span {
+      font-weight: 500;
+      font-size: 14px;
+    }
+    
+    /* Nav icons */
+    .nav li:nth-child(1) a span::before { content: '📊 '; }
+    .nav li:nth-child(2) a span::before { content: '⚡ '; }
+    .nav li:nth-child(3) a span::before { content: '🔗 '; }
+    .nav li:nth-child(4) a span::before { content: '📋 '; }
+    
+    .content {
+      padding: 28px 36px;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    
+    /* Flash message enhancements */
+    .flashes {
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .flash {
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-left: 4px solid transparent;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .flash::before {
+      font-size: 20px;
+    }
+    
+    .flash.success {
+      background: rgba(46,204,113,0.12);
+      color: var(--good);
+      border-left-color: var(--good);
+    }
+    .flash.success::before { content: '✅ '; }
+    
+    .flash.error {
+      background: rgba(255,94,110,0.12);
+      color: var(--bad);
+      border-left-color: var(--bad);
+    }
+    .flash.error::before { content: '❌ '; }
+    
+    .flash.info {
+      background: rgba(79,125,255,0.12);
+      color: var(--accent-2);
+      border-left-color: var(--accent);
+    }
+    .flash.info::before { content: 'ℹ️ '; }
+    
+    .flash.warning {
+      background: rgba(241,196,15,0.12);
+      color: var(--warn);
+      border-left-color: var(--warn);
+    }
+    .flash.warning::before { content: '⚠️ '; }
+    
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    
+    /* Sidebar footer */
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 16px 12px 8px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    
+    .sidebar-footer .badge {
+      font-size: 10px;
+      padding: 3px 12px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      background: rgba(79,125,255,0.15);
+      color: var(--accent-2);
+      border: 1px solid rgba(79,125,255,0.1);
+    }
+    
+    .sidebar-footer .mode-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    
+    /* Scrollbar for sidebar */
+    .sidebar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .sidebar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .sidebar::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+    .sidebar::-webkit-scrollbar-thumb:hover {
+      background: var(--accent);
+    }
+    
+    /* Responsive improvements */
+    @media (max-width: 900px) {
+      .sidebar h1::before {
+        font-size: 18px;
+      }
+      .sidebar h1 {
+        font-size: 14px;
+        justify-content: center;
+        padding: 8px 0;
+        margin-bottom: 12px;
+      }
+      .nav li a {
+        justify-content: center;
+        padding: 10px 8px;
+      }
+      .nav li a span {
+        font-size: 0;
+      }
+      .nav li a span::before {
+        font-size: 18px;
+      }
+      .sidebar-footer {
+        display: none;
+      }
+      .content {
+        padding: 16px;
+      }
+    }
+    
+    @media (max-width: 600px) {
+      .content {
+        padding: 12px;
+      }
+      .flash {
+        font-size: 13px;
+        padding: 12px 16px;
+      }
+    }
+    
+    /* Smooth loading state */
+    .content {
+      opacity: 0;
+      animation: fadeIn 0.4s ease-out 0.1s forwards;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Mode indicator dot */
+    .mode-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--good);
+      margin-right: 4px;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>SEO Autopilot</h1>
+      <ul class="nav">
+        <li>
+          <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">
+            <span>Dashboard</span>
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('live_activity') }}" class="{{ 'active' if request.endpoint == 'live_activity' }}">
+            <span>Live AI Activity</span>
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('connect_website') }}" class="{{ 'active' if request.endpoint == 'connect_website' }}">
+            <span>Connect Website</span>
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('audit_log') }}" class="{{ 'active' if request.endpoint == 'audit_log' }}">
+            <span>Audit Log</span>
+          </a>
+        </li>
+      </ul>
+      <div class="sidebar-footer">
+        <div class="mode-label">
+          <span>Mode</span>
+          <span class="badge badge-info">
+            <span class="mode-dot"></span>
+            {{ config.SEO_AUTOMATION_MODE or 'safe_autopilot' }}
+          </span>
+        </div>
+        <div style="margin-top:8px;font-size:10px;opacity:0.6;text-align:center;">
+          v{{ config.VERSION or '1.0' }} · AI Powered
+        </div>
+      </div>
+    </aside>
+    <main class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flashes">
+            {% for cat, m in messages %}
+              <div class="flash {{ cat }}">{{ m }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

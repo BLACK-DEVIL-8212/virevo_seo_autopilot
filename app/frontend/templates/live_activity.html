@@ -1,0 +1,672 @@
+{% extends "base.html" %}
+{% block title %}Live AI Activity · AI SEO Autopilot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>⚡ Live AI Activity</h2>
+    <div class="subtitle">Real-time process monitor</div>
+  </div>
+  <div class="row" style="gap:8px;">
+    <span id="connection-status" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);padding:4px 12px;background:var(--bg);border-radius:6px;border:1px solid var(--border);">
+      <span id="status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good);animation:pulse 2s infinite;"></span>
+      <span id="status-text">Connected</span>
+    </span>
+    <select id="jobSelect" onchange="window.location.href='?job_id='+this.value" class="form-control" style="width:280px;padding:8px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:13px;">
+      <option value="">📋 Select a job...</option>
+      {% for j in jobs %}
+      <option value="{{ j["job_id"] }}" {{ 'selected' if job_id == j["job_id"] }}>
+        {{ j["job_type"] }} - {{ j["status"] }} ({{ j["job_id"][:8] }})
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+{% if selected_job %}
+  <div id="liveMonitor" data-job-id="{{ selected_job["job_id"] }}">
+  
+  <!-- Stats Cards -->
+  <div class="grid grid-4">
+    <div class="stat" style="position:relative;overflow:hidden;">
+      <div style="position:absolute;top:-20px;right:-20px;font-size:48px;opacity:0.05;">📊</div>
+      <div class="label">Status</div>
+      <div class="value" id="statusBadge" style="font-size:20px;margin-top:8px;">
+        <span class="badge {{ 'badge-success' if selected_job['status'] == 'running' else 'badge-info' if selected_job['status'] == 'queued' else 'badge-warning' if selected_job['status'] == 'blocked' else 'badge-neutral' }}"
+              style="font-size:14px;padding:6px 18px;border-radius:20px;">
+          {{ selected_job["status"]|upper }}
+        </span>
+      </div>
+    </div>
+    <div class="stat">
+      <div class="label">📄 Pages Crawled</div>
+      <div class="value" id="pagesCrawled" style="color:var(--accent-2);">{{ stats.pages_crawled or 0 }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">🔍 Pages Discovered</div>
+      <div class="value" id="pagesDiscovered" style="color:var(--good);">{{ stats.pages_discovered or 0 }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">⚠️ Issues Found</div>
+      <div class="value" id="issuesFound" style="color:{% if stats.issues_found > 0 %}var(--warn){% else %}var(--muted){% endif %};">{{ stats.issues_found or 0 }}</div>
+    </div>
+  </div>
+
+  <div class="grid grid-4" style="margin-top:12px">
+    <div class="stat">
+      <div class="label">⏳ Pages Queued</div>
+      <div class="value" id="pagesQueued" style="color:var(--accent);">{{ stats.pages_queued or 0 }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">❌ Pages Failed</div>
+      <div class="value" id="pagesFailed" style="color:var(--bad);">{{ stats.pages_failed or 0 }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">⏭️ Pages Skipped</div>
+      <div class="value" id="pagesSkipped" style="color:var(--muted);">{{ stats.pages_skipped or 0 }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">🚫 Pages Blocked</div>
+      <div class="value" id="pagesBlocked" style="color:var(--warn);">{{ stats.pages_blocked or 0 }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">🚨 Errors</div>
+      <div class="value" id="errorCount" style="font-size:32px; color:{% if stats.errors > 0 %}var(--bad){% else %}var(--good){% endif %};">
+        {{ stats.errors or 0 }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Current Agent Card -->
+  <div class="card" style="background:linear-gradient(135deg, var(--panel), var(--panel-2));border:1px solid rgba(79,125,255,0.2);">
+    <div class="row" style="justify-content:space-between; align-items:center;flex-wrap:wrap;gap:12px;">
+      <div style="flex:1;min-width:200px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+          <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);font-weight:600;">Current Agent</span>
+          <span id="agent-status-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--good);"></span>
+        </div>
+        <div id="currentAgent" style="font-size:18px; font-weight:700; margin-top:2px;color:var(--accent-2);">
+          {{ stats.current_agent or '—' }}
+        </div>
+        <div id="currentAction" style="color:var(--muted);font-size:14px;margin-top:4px;">
+          {{ selected_job["message"] or 'Waiting...' }}
+        </div>
+        <div id="currentUrl" style="font-family:monospace; font-size:12px;color:var(--muted);margin-top:4px;word-break:break-all;"></div>
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <button id="btnPause" class="btn btn-secondary" onclick="controlJob('pause')" style="padding:8px 20px;border-radius:8px;">
+          ⏸️ Pause
+        </button>
+        <button id="btnResume" class="btn btn-secondary" onclick="controlJob('resume')" style="display:none;padding:8px 20px;border-radius:8px;">
+          ▶️ Resume
+        </button>
+        <button id="btnStop" class="btn btn-danger" onclick="controlJob('stop')" style="padding:8px 20px;border-radius:8px;">
+          ⏹️ Stop
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress Card -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div class="section-title" style="margin:0;">Crawl Progress</div>
+      <span id="progressText" style="font-size:14px;font-weight:700;color:var(--accent-2);">
+        {{ selected_job["progress"] }}%
+      </span>
+    </div>
+    <div class="progress-bar" style="height:10px;background:var(--bg-2);border-radius:999px;overflow:hidden;border:1px solid var(--border);">
+      <div class="progress-fill" id="progressFill" style="width:{{ selected_job["progress"] }}%;height:100%;background:linear-gradient(90deg, var(--accent), var(--accent-2), var(--good));transition:width 0.5s ease;"></div>
+    </div>
+  </div>
+
+  <!-- Crawl Debug Card -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div class="section-title" style="margin:0;">🔧 Crawl Debug</div>
+      <span style="font-size:11px;color:var(--muted);">Live updates</span>
+    </div>
+    <div id="crawlDebug" class="desc" style="font-family:monospace; font-size:12px; white-space:pre-wrap; margin-top:8px;background:var(--bg);padding:12px 16px;border-radius:6px;border:1px solid var(--border);min-height:80px;max-height:200px;overflow-y:auto;">
+      Waiting for crawl debug data...
+    </div>
+  </div>
+
+  <!-- AI Model Status -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div class="section-title" style="margin:0;">🤖 AI Model Status</div>
+      <span style="font-size:11px;color:var(--muted);">Hugging Face</span>
+    </div>
+    <div id="aiStatus" class="desc" style="font-family:monospace; font-size:12px; white-space:pre-wrap; margin-top:8px;background:var(--bg);padding:12px 16px;border-radius:6px;border:1px solid var(--border);min-height:100px;max-height:250px;overflow-y:auto;">
+      Loading AI status...
+    </div>
+    <div class="row" style="margin-top:12px; gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-sm" onclick="testAI()" style="padding:6px 16px;border-radius:6px;">🧪 Test AI Model</button>
+      <button class="btn btn-sm btn-danger" onclick="repairAI()" style="padding:6px 16px;border-radius:6px;">🔧 Repair AI Model</button>
+      <button class="btn btn-sm btn-secondary" onclick="loadAIStatus()" style="padding:6px 16px;border-radius:6px;">🔄 Refresh Status</button>
+    </div>
+  </div>
+
+  <!-- Keyword Intelligence Status -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div class="section-title" style="margin:0;">🔑 Keyword Intelligence Status</div>
+      <span style="font-size:11px;color:var(--muted);">Live analysis</span>
+    </div>
+    <div id="keywordStatus" class="desc" style="font-family:monospace; font-size:12px; white-space:pre-wrap; margin-top:8px;background:var(--bg);padding:12px 16px;border-radius:6px;border:1px solid var(--border);min-height:80px;max-height:200px;overflow-y:auto;">
+      Waiting for keyword analysis...
+    </div>
+  </div>
+
+  <!-- Issue Severity & Errors -->
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="section-title">Issue Severity</div>
+      <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg);padding:4px 12px;border-radius:6px;">
+          <span class="badge badge-critical" style="padding:2px 10px;">Critical</span>
+          <span id="sevCritical" style="font-weight:700;font-size:18px;color:var(--crit);">{{ stats.by_severity.get('critical', 0) }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg);padding:4px 12px;border-radius:6px;">
+          <span class="badge badge-high" style="padding:2px 10px;">High</span>
+          <span id="sevHigh" style="font-weight:700;font-size:18px;color:var(--bad);">{{ stats.by_severity.get('high', 0) }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg);padding:4px 12px;border-radius:6px;">
+          <span class="badge badge-medium" style="padding:2px 10px;">Medium</span>
+          <span id="sevMedium" style="font-weight:700;font-size:18px;color:var(--warn);">{{ stats.by_severity.get('medium', 0) }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg);padding:4px 12px;border-radius:6px;">
+          <span class="badge badge-low" style="padding:2px 10px;">Low</span>
+          <span id="sevLow" style="font-weight:700;font-size:18px;color:var(--good);">{{ stats.by_severity.get('low', 0) }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">Total Errors</div>
+      <div class="value" id="errorCount2" style="font-size:42px;font-weight:800; color:{% if stats.errors > 0 %}var(--bad){% else %}var(--good){% endif %};margin-top:4px;">
+        {{ stats.errors or 0 }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Activity Log -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <div class="section-title" style="margin:0;">📋 Live Activity Log</div>
+      <span style="font-size:11px;color:var(--muted);">Latest events</span>
+    </div>
+    <div id="activityLog" class="activity-log" style="max-height:500px;overflow-y:auto;padding:8px 16px;background:var(--bg);">
+      {% for e in events %}
+      <div class="log-entry severity-{{ e.severity }}" style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start;transition:background 0.2s;">
+        <span class="log-time" style="color:var(--muted);min-width:60px;font-size:12px;font-family:monospace;">
+          {{ e.timestamp[11:19] if e.timestamp else '' }}
+        </span>
+        <span class="log-agent" style="color:var(--accent-2);min-width:140px;font-weight:600;font-size:12px;">
+          {{ e.agent_name or 'System' }}
+        </span>
+        <span class="log-message" style="flex:1;font-size:13px;word-break:break-word;">
+          {{ e.message }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:60px 20px;border:2px dashed var(--border);background:var(--bg);">
+  <div style="font-size:48px;margin-bottom:16px;opacity:0.4;">🔍</div>
+  <div style="font-size:18px;font-weight:600;margin-bottom:8px;">No Job Selected</div>
+  <div class="desc" style="font-size:14px;max-width:400px;margin:0 auto;">
+    Select a job above to monitor its live activity, or start a crawl from a website detail page.
+  </div>
+  <div style="margin-top:16px;color:var(--muted);font-size:13px;">
+    💡 Tip: Jobs appear here when they are running or queued
+  </div>
+</div>
+{% endif %}
+
+<style>
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.log-entry {
+  animation: slideIn 0.2s ease-out;
+}
+.log-entry:hover {
+  background: var(--panel-2);
+  border-radius: 4px;
+}
+#activityLog::-webkit-scrollbar {
+  width: 6px;
+}
+#activityLog::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+#activityLog::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+#activityLog::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+.progress-fill {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--good));
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 20px rgba(79,125,255,0.3);
+}
+#crawlDebug::-webkit-scrollbar,
+#aiStatus::-webkit-scrollbar,
+#keywordStatus::-webkit-scrollbar {
+  width: 4px;
+}
+#crawlDebug::-webkit-scrollbar-track,
+#aiStatus::-webkit-scrollbar-track,
+#keywordStatus::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+#crawlDebug::-webkit-scrollbar-thumb,
+#aiStatus::-webkit-scrollbar-thumb,
+#keywordStatus::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+.stat .value {
+  transition: all 0.3s ease;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let eventSource = null;
+let currentJobId = null;
+let isPaused = false;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
+
+function initStream(jobId) {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  currentJobId = jobId;
+  const log = document.getElementById('activityLog');
+  if (log) log.innerHTML = '';
+  updateConnectionStatus('connecting');
+
+  try {
+    eventSource = new EventSource(`/api/events/stream/${jobId}`);
+    
+    eventSource.onopen = function() {
+      updateConnectionStatus('connected');
+      reconnectAttempts = 0;
+    };
+
+    eventSource.onmessage = function(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event_type === 'keepalive') {
+          updateConnectionStatus('connected');
+          return;
+        }
+        handleEvent(data);
+      } catch (e) {
+        console.error('Error parsing event:', e);
+      }
+    };
+
+    eventSource.onerror = function() {
+      reconnectAttempts++;
+      if (reconnectAttempts <= maxReconnectAttempts) {
+        updateConnectionStatus('reconnecting');
+        setTimeout(() => {
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+            initStream(jobId);
+          }
+        }, 2000 * reconnectAttempts);
+      } else {
+        updateConnectionStatus('disconnected');
+      }
+    };
+  } catch (e) {
+    console.error('Failed to create EventSource:', e);
+    updateConnectionStatus('disconnected');
+  }
+}
+
+function updateConnectionStatus(status) {
+  const dot = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (!dot || !text) return;
+  
+  const statusMap = {
+    'connected': { color: 'var(--good)', text: 'Connected' },
+    'connecting': { color: 'var(--warn)', text: 'Connecting...' },
+    'reconnecting': { color: 'var(--warn)', text: 'Reconnecting...' },
+    'disconnected': { color: 'var(--bad)', text: 'Disconnected' }
+  };
+  const s = statusMap[status] || statusMap['disconnected'];
+  dot.style.background = s.color;
+  text.textContent = s.text;
+}
+
+function handleEvent(data) {
+  const log = document.getElementById('activityLog');
+  
+  // Helper to update count
+  function updateCount(id, increment = 1) {
+    const el = document.getElementById(id);
+    if (el) {
+      const current = parseInt(el.textContent) || 0;
+      el.textContent = current + increment;
+    }
+  }
+
+  if (data.event_type === 'page_crawl_started') {
+    const urlEl = document.getElementById('currentUrl');
+    if (urlEl) urlEl.textContent = data.url || '';
+    const actionEl = document.getElementById('currentAction');
+    if (actionEl) actionEl.textContent = data.message || 'Crawling...';
+    const agentEl = document.getElementById('currentAgent');
+    if (agentEl) agentEl.textContent = data.agent_name || '';
+  }
+
+  if (data.event_type === 'page_crawl_completed') {
+    updateCount('pagesCrawled');
+  }
+
+  if (data.event_type === 'page_crawl_blocked') {
+    updateCount('pagesBlocked');
+    updateCount('pagesFailed');
+    updateCount('errorCount');
+    updateCount('errorCount2');
+  }
+
+  if (data.event_type === 'page_crawl_skipped') {
+    updateCount('pagesSkipped');
+  }
+
+  if (data.event_type === 'crawl_progress') {
+    if (data.metadata) {
+      const m = data.metadata;
+      const progressFill = document.getElementById('progressFill');
+      const progressText = document.getElementById('progressText');
+      if (progressFill) progressFill.style.width = (m.progress || 0) + '%';
+      if (progressText) progressText.textContent = (m.progress || 0) + '% complete';
+      const crawledEl = document.getElementById('pagesCrawled');
+      if (crawledEl) crawledEl.textContent = m.pages_crawled || 0;
+      const discoveredEl = document.getElementById('pagesDiscovered');
+      if (discoveredEl) discoveredEl.textContent = m.pages_discovered || 0;
+      const failedEl = document.getElementById('pagesFailed');
+      if (failedEl) failedEl.textContent = m.pages_failed || 0;
+      const blockedEl = document.getElementById('pagesBlocked');
+      if (blockedEl) blockedEl.textContent = m.pages_blocked || 0;
+      const skippedEl = document.getElementById('pagesSkipped');
+      if (skippedEl) skippedEl.textContent = m.pages_skipped || 0;
+    }
+  }
+
+  if (data.event_type === 'url_discovered') {
+    updateCount('pagesDiscovered');
+  }
+
+  if (data.event_type === 'page_queued') {
+    updateCount('pagesQueued');
+  }
+
+  if (data.event_type === 'page_crawl_failed') {
+    updateCount('pagesFailed');
+    updateCount('errorCount');
+    updateCount('errorCount2');
+  }
+
+  if (data.event_type === 'seo_issue_found') {
+    updateCount('issuesFound');
+    if (data.metadata && data.metadata.severity) {
+      const sev = data.metadata.severity;
+      const sevEl = document.getElementById('sev' + sev.charAt(0).toUpperCase() + sev.slice(1));
+      if (sevEl) {
+        const current = parseInt(sevEl.textContent) || 0;
+        sevEl.textContent = current + 1;
+      }
+    }
+  }
+
+  if (data.event_type === 'crawl_paused') {
+    isPaused = true;
+    document.getElementById('btnPause').style.display = 'none';
+    document.getElementById('btnResume').style.display = '';
+    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-warning" style="font-size:14px;padding:6px 18px;border-radius:20px;">⏸️ PAUSED</span>';
+  }
+
+  if (data.event_type === 'crawl_resumed') {
+    isPaused = false;
+    document.getElementById('btnPause').style.display = '';
+    document.getElementById('btnResume').style.display = 'none';
+    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-success" style="font-size:14px;padding:6px 18px;border-radius:20px;">▶️ RUNNING</span>';
+  }
+
+  if (data.event_type === 'crawl_stopped') {
+    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-high" style="font-size:14px;padding:6px 18px;border-radius:20px;">⏹️ STOPPED</span>';
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    updateConnectionStatus('disconnected');
+  }
+
+  if (data.event_type === 'crawl_blocked') {
+    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-warning" style="font-size:14px;padding:6px 18px;border-radius:20px;">🚫 BLOCKED</span>';
+    document.getElementById('progressFill').style.width = '0%';
+    document.getElementById('progressText').textContent = '0%';
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    updateConnectionStatus('disconnected');
+  }
+
+  if (data.event_type === 'crawl_completed' || data.event_type === 'analysis_completed') {
+    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-success" style="font-size:14px;padding:6px 18px;border-radius:20px;">✅ COMPLETED</span>';
+    document.getElementById('progressFill').style.width = '100%';
+    document.getElementById('progressText').textContent = '100%';
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    updateConnectionStatus('disconnected');
+  }
+
+  if (data.event_type === 'crawl_debug') {
+    const debug = document.getElementById('crawlDebug');
+    if (debug && data.metadata) {
+      const m = data.metadata;
+      let text = `📊 Crawl Statistics\n${'─'.repeat(40)}\n`;
+      text += `Pages Crawled: ${m.pages_crawled || 0}\n`;
+      text += `Pages Discovered: ${m.pages_discovered || 0}\n`;
+      text += `Pages Queued: ${m.pages_queued || 0}\n`;
+      text += `Pages Failed: ${m.pages_failed || 0}\n`;
+      text += `Pages Skipped: ${m.pages_skipped || 0}\n\n`;
+      if (m.discovery_sources) {
+        text += `📌 Discovery Sources\n${'─'.repeat(40)}\n`;
+        for (const [url, src] of Object.entries(m.discovery_sources).slice(0, 10)) {
+          text += `  ${url} => ${src}\n`;
+        }
+        if (Object.keys(m.discovery_sources).length > 10) {
+          text += `  ... and ${Object.keys(m.discovery_sources).length - 10} more\n`;
+        }
+      }
+      if (m.skip_reasons) {
+        text += `\n⏭️ Skip Reasons (sample)\n${'─'.repeat(40)}\n`;
+        for (const [url, reason] of Object.entries(m.skip_reasons).slice(0, 5)) {
+          text += `  ${url} => ${reason}\n`;
+        }
+        if (Object.keys(m.skip_reasons).length > 5) {
+          text += `  ... and ${Object.keys(m.skip_reasons).length - 5} more\n`;
+        }
+      }
+      debug.textContent = text;
+      debug.scrollTop = debug.scrollHeight;
+    }
+  }
+
+  if (data.event_type.startsWith('ai_')) {
+    updateAIStatus(data);
+  }
+
+  if (data.event_type.startsWith('keyword_')) {
+    updateKeywordStatus(data);
+  }
+
+  if (data.agent_name) {
+    const agentEl = document.getElementById('currentAgent');
+    if (agentEl) agentEl.textContent = data.agent_name;
+  }
+  if (data.message) {
+    const actionEl = document.getElementById('currentAction');
+    if (actionEl) actionEl.textContent = data.message;
+  }
+
+  // Add to log
+  if (log) {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry severity-' + (data.severity || 'info');
+    const time = data.timestamp ? data.timestamp.substring(11, 19) : new Date().toTimeString().substring(0, 8);
+    let msg = data.message || '';
+    if (data.metadata && data.metadata.source) {
+      msg = `[${data.metadata.source}] ${msg}`;
+    }
+    if (data.agent_name === 'Keyword Intelligence Agent') {
+      msg = `[KEYWORD] ${msg}`;
+    }
+    entry.innerHTML = `
+      <span class="log-time">${time}</span>
+      <span class="log-agent">${data.agent_name || 'System'}</span>
+      <span class="log-message">${msg}</span>
+    `;
+    log.insertBefore(entry, log.firstChild);
+    
+    // Keep log manageable
+    while (log.children.length > 200) {
+      log.removeChild(log.lastChild);
+    }
+  }
+}
+
+function updateKeywordStatus(data) {
+  const el = document.getElementById('keywordStatus');
+  if (!el) return;
+  let text = '🔑 KEYWORD INTELLIGENCE\n' + '═'.repeat(40) + '\n\n';
+  if (data.metadata) {
+    const m = data.metadata;
+    text += `Total Keywords: ${m.total_keywords || '—'}\n`;
+    text += `High Opportunity: ${m.high_opportunity || '—'}\n`;
+    text += `Trending Keywords: ${m.trending_keywords || '—'}\n`;
+    text += `Content Gaps Found: ${m.content_gaps_found || '—'}\n`;
+    text += `Cannibalization Issues: ${m.cannibalization_count || '—'}\n`;
+    text += `Pages with Strategy: ${m.pages_with_strategy || '—'}\n`;
+    if (m.last_updated) {
+      text += `Last Updated: ${m.last_updated}\n`;
+    }
+  } else {
+    text += data.message || 'Waiting for keyword analysis...';
+  }
+  el.textContent = text;
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateAIStatus(data) {
+  const el = document.getElementById('aiStatus');
+  if (!el) return;
+  let text = '🤖 AI MODEL STATUS\n' + '═'.repeat(40) + '\n\n';
+  if (data.metadata) {
+    const m = data.metadata;
+    text += `Provider: ${m.provider || 'Hugging Face'}\n`;
+    text += `Model: ${m.model || 'N/A'}\n\n`;
+    text += `📥 Download: ${m.download_status || 'CHECKING'}\n`;
+    text += `🧠 Model Load: ${m.model_load_status || 'CHECKING'}\n`;
+    text += `🔤 Tokenizer: ${m.tokenizer_status || 'CHECKING'}\n`;
+    text += `🧪 Inference Test: ${m.inference_test || 'CHECKING'}\n\n`;
+    text += `💻 Device: ${m.device || 'CPU'}\n\n`;
+    text += `📊 Status: ${m.ai_status || 'CHECKING'}\n`;
+    if (m.last_error) {
+      text += `\n❌ Last Error: ${m.last_error}\n`;
+    }
+    if (m.model_path) {
+      text += `\n📂 Path: ${m.model_path}\n`;
+    }
+    if (m.model_size_mb) {
+      text += `📦 Size: ${m.model_size_mb} MB\n`;
+    }
+  } else {
+    text += data.message || 'Checking...';
+  }
+  el.textContent = text;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function loadAIStatus() {
+  const el = document.getElementById('aiStatus');
+  if (el) el.textContent = '🔄 Loading AI status...\n' + '═'.repeat(40) + '\n\nPlease wait...';
+  try {
+    const r = await fetch('/api/ai/status');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    updateAIStatus({metadata: data});
+  } catch (e) {
+    const el2 = document.getElementById('aiStatus');
+    if (el2) el2.textContent = '❌ AI Status: ERROR\n' + '═'.repeat(40) + '\n\n' + e.message;
+  }
+}
+
+async function testAI() {
+  const el = document.getElementById('aiStatus');
+  if (el) el.textContent = '🧪 Testing AI model...\n' + '═'.repeat(40) + '\n\nThis may take a minute...';
+  try {
+    const r = await fetch('/api/ai/test', {method: 'POST'});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    updateAIStatus({metadata: data});
+    setTimeout(loadAIStatus, 1000);
+  } catch (e) {
+    if (el) el.textContent = '❌ AI Test Failed:\n' + '═'.repeat(40) + '\n\n' + e.message;
+  }
+}
+
+async function repairAI() {
+  const el = document.getElementById('aiStatus');
+  if (el) el.textContent = '🔧 Repairing AI model...\n' + '═'.repeat(40) + '\n\nThis may take several minutes...';
+  try {
+    const r = await fetch('/api/ai/repair', {method: 'POST'});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    updateAIStatus({metadata: data});
+    setTimeout(loadAIStatus, 2000);
+  } catch (e) {
+    if (el) el.textContent = '❌ AI Repair Failed:\n' + '═'.repeat(40) + '\n\n' + e.message;
+  }
+}
+
+function controlJob(signal) {
+  if (!currentJobId) return;
+  fetch(`/api/jobs/${currentJobId}/control`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({signal: signal})
+  }).catch(e => console.error('Control error:', e));
+}
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+});
+
+{% if selected_job %}
+initStream('{{ selected_job["job_id"] }}');
+// Load AI status on page load
+document.addEventListener('DOMContentLoaded', function() {
+  loadAIStatus();
+});
+{% endif %}
+</script>
+{% endblock %}

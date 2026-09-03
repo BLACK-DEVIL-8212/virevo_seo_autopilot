@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job["job_id"] }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h2>⚙️ Background Job</h2>
+    <div class="subtitle">
+      <code style="font-size:13px;color:var(--accent-2);font-weight:600;">{{ job["job_id"][:12] }}</code>
+      <span style="color:var(--muted);margin:0 8px;">·</span>
+      <span style="color:var(--muted);font-size:13px;">{{ job["job_type"] }}</span>
+      <span style="color:var(--muted);margin:0 8px;">·</span>
+      <span id="live-status-indicator" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;">
+        <span id="status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{% if job['status'] == 'running' %}var(--good);animation:pulse 1.5s infinite;{% elif job['status'] == 'completed' %}var(--good);{% elif job['status'] == 'failed' %}var(--bad);{% else %}var(--warn);{% endif %}"></span>
+        <span id="status-text" style="font-weight:600;color:var(--text);">{{ job['status']|upper }}</span>
+      </span>
+    </div>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('dashboard') }}" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;">
+    ← Back to Dashboard
+  </a>
+</div>
+
+<div class="grid grid-2" style="align-items:start;">
+  <div>
+    <div class="card" style="padding:20px 24px;">
+      <h3 style="margin:0 0 16px 0;font-size:15px;display:flex;align-items:center;gap:8px;">
+        <span>📊</span> Job Details
+      </h3>
+      
+      <div style="display:grid;grid-template-columns:120px 1fr;gap:12px 16px;align-items:center;">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Status</div>
+        <div>
+          <span class="badge {{ 'badge-success' if job['status'] == 'completed' else 'badge-info' if job['status'] == 'running' else 'badge-high' if job['status'] == 'failed' else 'badge-warning' if job['status'] == 'blocked' else 'badge-neutral' }}" 
+                style="font-size:13px;padding:6px 18px;border-radius:20px;display:inline-block;">
+            {{ job['status']|upper }}
+          </span>
+        </div>
+        
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Progress</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="progress" style="flex:1;height:8px;background:var(--bg-2);border-radius:999px;overflow:hidden;border:1px solid var(--border);">
+            <div class="progress-bar" style="width:{{ job["progress"] }}%;height:100%;background:linear-gradient(90deg, var(--accent), var(--accent-2), var(--good));transition:width 0.5s ease;"></div>
+          </div>
+          <span style="font-size:14px;font-weight:700;color:var(--accent-2);min-width:36px;">
+            {{ job["progress"] }}%
+          </span>
+        </div>
+        
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Message</div>
+        <div style="font-size:14px;color:var(--text);word-break:break-word;">{{ job["message"] or 'No message' }}</div>
+        
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Started</div>
+        <div style="font-size:13px;color:var(--muted);font-family:monospace;">{{ job["created_at"]|dt }}</div>
+        
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Updated</div>
+        <div style="font-size:13px;color:var(--muted);font-family:monospace;">{{ job["updated_at"]|dt }}</div>
+        
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Job ID</div>
+        <div style="font-size:12px;font-family:monospace;color:var(--muted);word-break:break-all;">{{ job["job_id"] }}</div>
+      </div>
+    </div>
+  </div>
+  
+  <div>
+    <div class="card" style="padding:20px 24px;">
+      <h3 style="margin:0 0 16px 0;font-size:15px;display:flex;align-items:center;gap:8px;">
+        <span>📦</span> Job Result
+      </h3>
+      {% if job["result_json"] %}
+      <pre style="background:var(--bg);padding:14px 16px;border-radius:8px;border:1px solid var(--border);font-size:12px;max-height:300px;overflow-y:auto;font-family:'SF Mono',Consolas,monospace;color:var(--text);margin:0;white-space:pre-wrap;word-break:break-all;">
+{{ job["result_json"] | tojson(indent=2) }}
+      </pre>
+      {% else %}
+      <div style="text-align:center;padding:30px 20px;color:var(--muted);">
+        <div style="font-size:32px;margin-bottom:8px;opacity:0.3;">⏳</div>
+        <div style="font-size:14px;">No result available yet</div>
+        <div style="font-size:12px;margin-top:4px;">The job result will appear here when completed</div>
+      </div>
+      {% endif %}
+    </div>
+    
+    <div class="card" style="padding:16px 20px;border:1px solid rgba(79,125,255,0.1);background:rgba(79,125,255,0.03);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:20px;">🔄</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">Live Updates</div>
+          <div style="font-size:13px;color:var(--text);">
+            This page auto-refreshes every 2 seconds
+            <span id="refresh-indicator" style="display:inline-block;margin-left:8px;font-size:12px;color:var(--muted);">●</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* Pulse animation for running jobs */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.8); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Progress bar animation */
+.progress-bar {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--good));
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Card styling */
+.card {
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(79,125,255,0.15);
+}
+
+/* Grid layout for details */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Table alternative - using grid for details */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px 16px;
+  align-items: center;
+}
+
+.detail-grid .label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.detail-grid .value {
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .topbar .btn {
+    align-self: flex-start;
+  }
+  
+  .detail-grid {
+    grid-template-columns: 1fr;
+    gap: 4px 0;
+  }
+  
+  .detail-grid .label {
+    margin-top: 8px;
+  }
+  
+  .detail-grid .label:first-child {
+    margin-top: 0;
+  }
+  
+  pre {
+    font-size: 11px;
+    padding: 10px 12px;
+  }
+}
+
+/* Scrollbar styling */
+pre::-webkit-scrollbar {
+  width: 6px;
+}
+
+pre::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+pre::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+pre::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Refresh indicator animation */
+#refresh-indicator {
+  animation: pulse 2s infinite;
+  color: var(--good);
+}
+
+/* Badge status colors */
+.badge-success { background: rgba(46,204,113,0.15); color: var(--good); }
+.badge-info { background: rgba(79,125,255,0.15); color: var(--accent-2); }
+.badge-high { background: rgba(255,94,110,0.15); color: var(--bad); }
+.badge-warning { background: rgba(241,196,15,0.15); color: var(--warn); }
+.badge-neutral { background: var(--panel-2); color: var(--muted); }
+
+/* Status dot animation */
+#status-dot.running {
+  animation: pulse 1.5s infinite;
+}
+</style>
+
+<script>
+(function() {
+  const TERMINAL = new Set(['completed','failed','cancelled','canceled','stopped','paused']);
+  let timer = null;
+  let updateCount = 0;
+
+  function stop() {
+    if (timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  function update(j) {
+    // Update status badge
+    const badge = document.querySelector('span.badge');
+    if (badge) {
+      badge.textContent = j.status.toUpperCase();
+      // Update badge class
+      badge.className = 'badge ' + 
+        (j.status === 'completed' ? 'badge-success' :
+         j.status === 'running' ? 'badge-info' :
+         j.status === 'failed' ? 'badge-high' :
+         j.status === 'blocked' ? 'badge-warning' :
+         'badge-neutral');
+    }
+    
+    // Update progress bar
+    const progressBar = document.querySelector('.progress-bar');
+    if (progressBar) {
+      progressBar.style.width = j.progress + '%';
+    }
+    
+    // Update progress text
+    const progressText = document.querySelector('.progress + span');
+    if (progressText) {
+      progressText.textContent = j.progress + '%';
+    }
+    
+    // Update message
+    const messageCells = document.querySelectorAll('.detail-grid .value');
+    if (messageCells.length >= 3) {
+      messageCells[2].textContent = j.message || 'No message';
+    }
+    
+    // Update status dot
+    const dot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    if (dot) {
+      dot.style.background = 
+        j.status === 'running' ? 'var(--good)' :
+        j.status === 'completed' ? 'var(--good)' :
+        j.status === 'failed' ? 'var(--bad)' :
+        'var(--warn)';
+      if (j.status === 'running') {
+        dot.style.animation = 'pulse 1.5s infinite';
+      } else {
+        dot.style.animation = 'none';
+      }
+    }
+    if (statusText) {
+      statusText.textContent = j.status.toUpperCase();
+    }
+    
+    updateCount++;
+    const indicator = document.getElementById('refresh-indicator');
+    if (indicator) {
+      indicator.textContent = '●';
+      indicator.style.color = 'var(--good)';
+    }
+  }
+
+  function tick() {
+    fetch('/api/jobs/{{ job["job_id"] }}')
+      .then(r => r.json())
+      .then(function(j) {
+        update(j);
+        if (TERMINAL.has(j.status)) {
+          stop();
+          const indicator = document.getElementById('refresh-indicator');
+          if (indicator) {
+            indicator.textContent = '■';
+            indicator.style.color = 'var(--muted)';
+          }
+        }
+      })
+      .catch(function() {
+        // Keep polling on transient errors
+        const indicator = document.getElementById('refresh-indicator');
+        if (indicator) {
+          indicator.textContent = '!';
+          indicator.style.color = 'var(--warn)';
+        }
+      });
+  }
+
+  // Start polling
+  timer = setInterval(tick, 2000);
+  
+  // Initial update
+  setTimeout(tick, 100);
+  
+  // Clean up on page unload
+  window.addEventListener('beforeunload', stop);
+  
+  // Stop polling if job is already terminal
+  if (TERMINAL.has('{{ job["status"] }}')) {
+    stop();
+    const indicator = document.getElementById('refresh-indicator');
+    if (indicator) {
+      indicator.textContent = '■';
+      indicator.style.color = 'var(--muted)';
+    }
+  }
+})();
+</script>
+{% endblock %}
