@@ -9,22 +9,329 @@ import warnings
 from collections import deque
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
-from typing import Optional, Set, List, Dict
+from typing import Optional, Set, List, Dict, Any
 
 import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
-from ..utils import normalize_url, is_internal, is_js_verification_page, fetch_real_html
-from ..config import Config
-from ..events import get_event_manager
-from ..website.renderer import PageRenderer
-from ..website.spa_detector import detect_architecture, detect_from_js_bundle
-from ..website.spa_crawler import SpaRouteDiscovery, SpaCrawler
-
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 
+# Utility functions
+def normalize_url(url: str) -> str:
+    """Normalize a URL by removing fragments and trailing slashes."""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    # Remove fragments
+    normalized = parsed._replace(fragment="").geturl()
+    # Remove trailing slash
+    if normalized.endswith("/") and not normalized.endswith("//"):
+        normalized = normalized[:-1]
+    return normalized
+
+
+def is_internal(url: str, root_url: str) -> bool:
+    """Check if URL is internal to the root domain."""
+    if not url or not root_url:
+        return False
+    parsed_url = urlparse(url)
+    parsed_root = urlparse(root_url)
+    if not parsed_url.netloc:
+        return True
+    return parsed_url.netloc == parsed_root.netloc
+
+
+def is_js_verification_page(html: str = "", headers: dict = None, cookies: dict = None, final_url: str = "") -> dict:
+    """Detect if a page is a JavaScript verification challenge page."""
+    result = {"is_challenge": False, "reason": ""}
+    
+    if not html:
+        return result
+    
+    html_lower = html.lower()
+    
+    # Specific challenge patterns that are unique to challenge pages
+    # These are script names, function names, and text that appear in
+    # Cloudflare/challenge pages but are unlikely in legitimate content
+    specific_indicators = [
+        "aes.js",
+        "slowaes",
+        "slowaes",
+        "toNumbers",
+        "toHex",
+        "checkCookie",
+        "__test",
+        "cf_chl",
+        "_cf_chl",
+        "_cf_challenge",
+        "enable javascript",
+        "this site requires javascript",
+        "checking your browser before",
+        "attention required",
+        "javascript is disabled",
+        "please enable js",
+        "ddos protection by",
+        "cf-ray",
+    ]
+    
+    matches = []
+    for indicator in specific_indicators:
+        if indicator in html_lower:
+            matches.append(indicator)
+    
+    # Require at least one specific indicator that is unique to challenge pages
+    if matches:
+        result["is_challenge"] = True
+        result["reason"] = f"Contains '{matches[0]}'"
+    
+    return result
+
+
+def fetch_real_html(url: str, session: requests.Session = None) -> dict:
+    """Fetch real HTML content with error handling."""
+    session = session or requests.Session()
+    try:
+        response = session.get(url, timeout=30, allow_redirects=True)
+        return {
+            "status_code": response.status_code,
+            "html": response.text,
+            "final_url": response.url,
+            "headers": dict(response.headers),
+            "cookies": dict(response.cookies),
+            "success": 200 <= response.status_code < 400
+        }
+    except Exception as e:
+        return {
+            "status_code": 0,
+            "html": "",
+            "final_url": url,
+            "headers": {},
+            "cookies": {},
+            "success": False,
+            "error": str(e)
+        }
+
+
+class Config:
+    """Configuration class for crawl settings."""
+    CRAWL_MAX_PAGES = 100
+    CRAWL_MAX_DEPTH = 3
+    CRAWL_DELAY_SECONDS = 1.0
+    USE_PLAYWRIGHT = True
+    PLAYWRIGHT_TIMEOUT = 30
+
+
+class PageRenderer:
+    """Page renderer using Playwright if available."""
+    
+    def __init__(self, use_playwright: bool = False, timeout: int = 30):
+        self.use_playwright = use_playwright
+        self.timeout = timeout
+        self._playwright_available = False
+        try:
+            import playwright
+            self._playwright_available = True
+        except ImportError:
+            pass
+    
+    def render(self, url: str, wait_for_selector: str = None) -> dict:
+        """Render a page using Playwright."""
+        if not self.use_playwright or not self._playwright_available:
+            return {"ok": False, "rendered": False, "html": "", "error": "Playwright not available"}
+        
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+                context = browser.new_context(
+                    user_agent="AI-SEO-Autopilot/1.0 (+https://example.com/bot)",
+                    viewport={"width": 1280, "height": 800}
+                )
+                page = context.new_page()
+                
+                # Navigate and wait for network idle
+                response = page.goto(url, timeout=self.timeout * 1000, wait_until="networkidle")
+                status_code = response.status if response else 0
+                
+                # Wait for selector if provided
+                if wait_for_selector:
+                    try:
+                        page.wait_for_selector(wait_for_selector, timeout=5000)
+                    except Exception:
+                        pass
+                
+                html = page.content()
+                title = page.title()
+                final_url = page.url
+                
+                browser.close()
+                return {
+                    "ok": True,
+                    "rendered": True,
+                    "html": html,
+                    "status_code": status_code,
+                    "final_url": final_url,
+                    "page_title": title
+                }
+        except Exception as e:
+            return {"ok": False, "rendered": False, "html": "", "error": str(e)}
+
+
+class EventManager:
+    """Simple event manager for crawl events."""
+    
+    def __init__(self):
+        self._handlers = {}
+        self._control_signals = {}
+    
+    def emit(self, job_id: str, event_type: str, message: str = "", 
+             agent_name: str = "Crawler", severity: str = "info", 
+             url: str = "", metadata: dict = None):
+        """Emit an event."""
+        event = {
+            "job_id": job_id,
+            "event_type": event_type,
+            "message": message,
+            "agent_name": agent_name,
+            "severity": severity,
+            "url": url,
+            "metadata": metadata or {},
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        if job_id in self._handlers:
+            for handler in self._handlers[job_id]:
+                try:
+                    handler(event)
+                except Exception:
+                    pass
+    
+    def check_control_signal(self, job_id: str) -> str:
+        """Check for control signals (stop, pause, resume)."""
+        return self._control_signals.get(job_id, "continue")
+    
+    def set_control_signal(self, job_id: str, signal: str):
+        """Set a control signal."""
+        self._control_signals[job_id] = signal
+    
+    def register_handler(self, job_id: str, handler):
+        """Register an event handler."""
+        if job_id not in self._handlers:
+            self._handlers[job_id] = []
+        self._handlers[job_id].append(handler)
+
+
+# Singleton event manager
+_event_manager = None
+
+def get_event_manager():
+    """Get the singleton event manager."""
+    global _event_manager
+    if _event_manager is None:
+        _event_manager = EventManager()
+    return _event_manager
+
+
+class SpaRouteDiscovery:
+    """Discover routes in Single Page Applications."""
+    
+    def __init__(self, root_url: str, html: str, renderer: PageRenderer):
+        self.root_url = normalize_url(root_url)
+        self.html = html
+        self.renderer = renderer
+    
+    def discover(self, max_routes: int = 30) -> Set[str]:
+        """Discover SPA routes."""
+        routes = set()
+        
+        # Look for router configuration in JavaScript
+        route_patterns = [
+            r'path\s*:\s*["\']([^"\']+)["\']',
+            r'route\s*:\s*["\']([^"\']+)["\']',
+            r'to\s*:\s*["\']([^"\']+)["\']',
+            r'href\s*:\s*["\']([^"\']+)["\']',
+            r'url\s*:\s*["\']([^"\']+)["\']',
+        ]
+        
+        # Extract routes from HTML and inline JavaScript
+        for pattern in route_patterns:
+            matches = re.findall(pattern, self.html, re.IGNORECASE)
+            for match in matches:
+                if match.startswith("/") and len(match) > 1 and not match.startswith("//"):
+                    full_url = normalize_url(urljoin(self.root_url, match))
+                    if is_internal(full_url, self.root_url):
+                        routes.add(full_url)
+        
+        # Look for React Router routes
+        react_router_pattern = r'<Route[^>]*path=["\']([^"\']+)["\']'
+        matches = re.findall(react_router_pattern, self.html, re.IGNORECASE)
+        for match in matches:
+            if match.startswith("/"):
+                full_url = normalize_url(urljoin(self.root_url, match))
+                if is_internal(full_url, self.root_url):
+                    routes.add(full_url)
+        
+        # Common SPA routes
+        common_routes = ["/about", "/contact", "/pricing", "/features", "/blog", "/faq", "/services"]
+        for route in common_routes:
+            full_url = normalize_url(urljoin(self.root_url, route))
+            if is_internal(full_url, self.root_url):
+                routes.add(full_url)
+        
+        return routes
+
+
+class SpaCrawler:
+    """Specialized crawler for Single Page Applications."""
+    
+    def __init__(self, root_url: str, renderer: PageRenderer):
+        self.root_url = normalize_url(root_url)
+        self.renderer = renderer
+        self.crawled = set()
+    
+    def crawl(self, max_pages: int = 50) -> List[Dict]:
+        """Crawl SPA pages."""
+        results = []
+        queue = deque([(self.root_url, 0)])
+        seen = {self.root_url}
+        
+        while queue and len(results) < max_pages:
+            url, depth = queue.popleft()
+            if url in self.crawled:
+                continue
+            
+            result = self.renderer.render(url)
+            if not result.get("ok") or not result.get("rendered"):
+                continue
+            
+            self.crawled.add(url)
+            html = result.get("html", "")
+            
+            # Extract links from rendered page
+            soup = BeautifulSoup(html, "html.parser")
+            for link in soup.find_all("a"):
+                href = link.get("href")
+                if href:
+                    full_url = normalize_url(urljoin(url, href))
+                    if is_internal(full_url, self.root_url) and full_url not in seen:
+                        seen.add(full_url)
+                        queue.append((full_url, depth + 1))
+            
+            results.append({
+                "url": url,
+                "html": html,
+                "status_code": result.get("status_code", 200),
+                "final_url": result.get("final_url", url),
+                "depth": depth,
+                "crawled_at": datetime.utcnow().isoformat()
+            })
+        
+        return results
+
+
 class CrawlStats:
+    """Statistics tracker for crawling."""
+    
     def __init__(self):
         self.pages_crawled = 0
         self.pages_discovered = 0
@@ -32,19 +339,19 @@ class CrawlStats:
         self.pages_failed = 0
         self.pages_skipped = 0
         self.pages_blocked = 0
+        self.ssl_warnings = 0
         self.errors: List[str] = []
         self.fetch_errors: List[Dict] = []
         self.source = "raw"
         self._stop = False
         self._pause = False
         self._lock = threading.Lock()
+        self.raw_render_events = 0
+        self.duplicate_crawl_attempts_prevented = 0
+        self.duplicate_homepage_attempts_prevented = 0
 
     def to_result(self) -> Dict:
-        """Return the authoritative crawl result dict.
-
-        Both the Live Activity UI and the Background Job result must use
-        this same object so the counters can never disagree.
-        """
+        """Convert stats to result dictionary."""
         return {
             "pages_crawled": self.pages_crawled,
             "pages_discovered": self.pages_discovered,
@@ -52,8 +359,12 @@ class CrawlStats:
             "pages_failed": self.pages_failed,
             "pages_skipped": self.pages_skipped,
             "pages_blocked": self.pages_blocked,
-            "errors": list(self.errors),
-            "fetch_errors": list(self.fetch_errors),
+            "ssl_warnings": self.ssl_warnings,
+            "errors": self.errors[:100],  # Limit to prevent overflow
+            "fetch_errors": self.fetch_errors[:100],
+            "raw_render_events": self.raw_render_events,
+            "duplicate_crawl_attempts_prevented": self.duplicate_crawl_attempts_prevented,
+            "duplicate_homepage_attempts_prevented": self.duplicate_homepage_attempts_prevented,
         }
 
 
@@ -72,6 +383,7 @@ class WebsiteCrawler:
         self.robots_disallow: Set[str] = set()
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": self.USER_AGENT})
+        self.session.timeout = 30
         self.stats = CrawlStats()
         self.results: List[Dict] = []
         self._seen: Set[str] = set()
@@ -81,9 +393,11 @@ class WebsiteCrawler:
         self._skip_reasons: Dict[str, str] = {}
         self._discovery_sources: Dict[str, str] = {}
         self._crawled: Set[str] = set()
+        self.url_states: Dict[str, Dict] = {}
+        self._queue_set: Set[str] = set()
         self.job_id: Optional[str] = None
         self.event_manager = get_event_manager()
-        self.renderer = PageRenderer()
+        self.renderer = PageRenderer(use_playwright=Config.USE_PLAYWRIGHT, timeout=Config.PLAYWRIGHT_TIMEOUT)
         self.architecture: Dict = {}
         self.spa_discovery: Optional[SpaRouteDiscovery] = None
         self._blocked: Dict[str, Dict] = {}
@@ -126,6 +440,7 @@ class WebsiteCrawler:
         return not self.stats._stop
 
     def _load_robots(self):
+        """Load robots.txt for the website."""
         try:
             r = self.session.get(urljoin(self.root_url, "/robots.txt"), timeout=10)
             if r.status_code == 200:
@@ -148,6 +463,7 @@ class WebsiteCrawler:
                        severity="warning", url=self.root_url)
 
     def _allowed(self, url: str) -> bool:
+        """Check if URL is allowed by robots.txt."""
         if not self.respect_robots or not self.robots_disallow:
             return True
         path = urlparse(url).path or "/"
@@ -159,11 +475,7 @@ class WebsiteCrawler:
         return True
 
     def _classify_exception(self, exc: Exception, url: str) -> Dict:
-        """Classify a network/HTTP exception into structured error info.
-
-        Preserves the real exception type and message instead of collapsing
-        every failure into a generic HTTP 0.
-        """
+        """Classify a network/HTTP exception into structured error info."""
         from urllib.parse import urlparse
         parsed = urlparse(url)
         hostname = parsed.hostname or ""
@@ -204,12 +516,7 @@ class WebsiteCrawler:
         }
 
     def _diagnose_connectivity(self, url: str) -> Dict:
-        """Run pre-crawl connectivity diagnostics.
-
-        Tests DNS resolution, TCP connection, SSL/TLS handshake, basic HTTP
-        GET, and redirect chain.  Logs the exact failure stage so the real
-        root cause of an HTTP 0 is never hidden.
-        """
+        """Run pre-crawl connectivity diagnostics."""
         from urllib.parse import urlparse
         import socket
         import ssl as _ssl
@@ -336,7 +643,6 @@ class WebsiteCrawler:
             diag["http"] = "success"
             diag["status_code"] = r.status_code
             diag["final_url"] = r.url
-            # Stage 5: Redirect chain
             diag["redirects"] = [
                 {"status_code": h.status_code, "url": h.url}
                 for h in r.history
@@ -372,26 +678,10 @@ class WebsiteCrawler:
         return diag
 
     def _render_with_browser(self, url: str,
-                             app_root_selector: str = "#app, #root, #__next, #__nuxt, [id*='app']") -> Dict:
-        """Render a page with a headless browser (Stage 2 fallback).
-
-        Used when normal HTTP fetching fails or the page is
-        JavaScript-rendered.  Implements the full two-stage browser pipeline:
-
-        1. Navigate to the URL.
-        2. Wait for DOM content loaded.
-        3. Wait for application root element.
-        4. Wait for network idle with a timeout.
-        5. Capture final URL.
-        6. Capture page title.
-        7. Capture rendered HTML.
-        8. Capture visible text.
-        9. Capture browser console errors.
-        10. Capture failed network requests.
-
-        Browser errors are never silently converted into HTTP 0.
-        """
-        if not getattr(self.renderer, 'use_playwright', False):
+                             app_root_selector: str = "#app, #root, #__next, #__nuxt, [id*='app']",
+                             ignore_https_errors: bool = False) -> Dict:
+        """Render a page with a headless browser."""
+        if not self.renderer.use_playwright:
             return {
                 "ok": False,
                 "rendered": False,
@@ -412,6 +702,7 @@ class WebsiteCrawler:
             "failed_requests": [],
             "error_type": None,
             "error_message": None,
+            "ssl_warning": False,
         }
 
         try:
@@ -421,25 +712,48 @@ class WebsiteCrawler:
                 ctx = browser.new_context(
                     user_agent=self.USER_AGENT,
                     viewport={"width": 1280, "height": 800},
+                    ignore_https_errors=ignore_https_errors,
                 )
                 page = ctx.new_page()
 
                 console_errors: List[Dict] = []
                 failed_requests: List[Dict] = []
 
-                page.on("console", lambda msg: console_errors.append({
-                    "type": msg.type,
-                    "text": msg.text,
-                }) if msg.type == "error" else None)
+                def _on_console(msg):
+                    try:
+                        if msg.type == "error":
+                            console_errors.append({
+                                "type": msg.type,
+                                "text": msg.text,
+                            })
+                    except Exception:
+                        pass
 
-                page.on("requestfailed", lambda req: failed_requests.append({
-                    "url": req.url,
-                    "method": req.method,
-                    "failure": (req.failure or {}).get("error_description", ""),
-                }))
+                page.on("console", _on_console)
+
+                def _on_request_failed(req):
+                    try:
+                        failure = req.failure
+                        if isinstance(failure, dict):
+                            err_desc = failure.get("error_description", str(failure))
+                        elif isinstance(failure, str):
+                            err_desc = failure
+                        elif failure is None:
+                            err_desc = ""
+                        else:
+                            err_desc = str(failure)
+                    except Exception:
+                        err_desc = ""
+                    failed_requests.append({
+                        "url": req.url,
+                        "method": req.method,
+                        "failure": err_desc,
+                    })
+
+                page.on("requestfailed", _on_request_failed)
 
                 try:
-                    # 1. Navigate to URL, 2. wait for DOMContentLoaded
+                    # Navigate to URL, wait for DOMContentLoaded
                     response = page.goto(
                         url, timeout=self.renderer.timeout * 1000,
                         wait_until="domcontentloaded",
@@ -451,33 +765,32 @@ class WebsiteCrawler:
                         result["error_type"] = "NoResponse"
                         result["error_message"] = "Browser received no response for the initial navigation."
 
-                    # 3. Wait for application root element
+                    # Wait for application root element
                     try:
                         page.wait_for_selector(app_root_selector, timeout=5000)
                     except Exception:
-                        pass  # Root element may not exist; proceed anyway
+                        pass
 
-                    # 4. Wait for network idle with timeout
+                    # Wait for network idle with timeout
                     try:
                         page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
                         page.wait_for_timeout(2000)
 
-                    # 5. Capture final URL
+                    # Capture final URL
                     result["final_url"] = page.url
-                    # 6. Capture page title
+                    # Capture page title
                     try:
                         result["page_title"] = page.title()
                     except Exception:
                         pass
-                    # 7. Capture rendered HTML
+                    # Capture rendered HTML
                     result["html"] = page.content()
-                    # 8. Capture visible text
+                    # Capture visible text
                     try:
                         result["visible_text"] = page.inner_text("body")
                     except Exception:
                         pass
-                    # 9 & 10. Console errors and failed requests already collected
                     result["console_errors"] = console_errors
                     result["failed_requests"] = failed_requests
                     result["ok"] = True
@@ -494,24 +807,47 @@ class WebsiteCrawler:
 
         return result
 
+    def _try_browser_fallback(self, url: str, error_info: Dict) -> Dict:
+        """Attempt browser rendering fallback for SSL/connection errors."""
+        if not self.renderer.use_playwright:
+            return {}
+
+        self._emit("browser_fallback_attempt",
+                   f"Attempting browser rendering fallback for {url}",
+                   severity="warning", url=url,
+                   metadata={"error_type": error_info.get("error_type"),
+                             "error_message": error_info.get("error_message")})
+
+        rendered = self._render_with_browser(url, ignore_https_errors=True)
+        if rendered.get("ok") and rendered.get("rendered") and rendered.get("html"):
+            self.stats.raw_render_events += 1
+            self._emit("browser_fallback_success",
+                       f"Browser rendered {url} despite strict HTTP failure",
+                       severity="success", url=url,
+                       metadata={"status_code": rendered.get("status_code"),
+                                 "page_title": rendered.get("page_title", ""),
+                                 "ssl_warning": True})
+            return {
+                "status_code": rendered.get("status_code", 200),
+                "html": rendered["html"],
+                "final_url": rendered.get("final_url", url),
+                "error_type": None,
+                "error_message": None,
+                "is_challenge": False,
+                "challenge": None,
+                "ssl_warning": True,
+                "browser_rendered": True,
+            }
+
+        self._emit("browser_fallback_failed",
+                   f"Browser fallback also failed for {url}: {rendered.get('error_message', 'unknown')}",
+                   severity="error", url=url,
+                   metadata={"error_type": rendered.get("error_type"),
+                             "error_message": rendered.get("error_message")})
+        return {}
+
     def _fetch(self, url: str) -> Dict:
-        """Fetch a URL with retry logic (Stage 1: HTTP fetch).
-
-        Returns a dict with:
-        - status_code: int — HTTP status code, or 0 if no response was received
-        - html: str — response body (may contain error text on failure)
-        - final_url: str — final URL after redirects
-        - error_type: str | None — exception class name if fetch failed
-        - error_message: str | None — exception message if fetch failed
-        - is_challenge: bool — JS verification challenge detected
-        - challenge: dict | None — challenge details if detected
-        - diagnostics: dict | None — connectivity diagnostics
-        - retries_exhausted: bool — whether all retries were used
-
-        HTTP status 0 means no valid HTTP response was received (DNS failure,
-        connection refused, SSL/TLS error, timeout, etc.).  It must never be
-        treated as a valid HTTP response.
-        """
+        """Fetch a URL with retry logic."""
         transient_errors = (
             requests.exceptions.ConnectionError,
             requests.exceptions.Timeout,
@@ -535,10 +871,9 @@ class WebsiteCrawler:
                 )
                 if challenge.get("is_challenge"):
                     self._blocked[url] = challenge
-                    # Do NOT emit here; crawl() will emit page_crawl_blocked
-                    # after it has full context (fetch_time, pages_crawled, etc.)
                     # Try Playwright fallback for JS verification pages
-                    if getattr(self.renderer, 'use_playwright', False):
+                    if self.renderer.use_playwright:
+                        self.stats.raw_render_events += 1
                         rendered = self.renderer.render(final_url or url)
                         if rendered.get("ok") and rendered.get("rendered") and rendered.get("html"):
                             rendered_html = rendered["html"]
@@ -557,8 +892,6 @@ class WebsiteCrawler:
                                     "is_challenge": False,
                                     "challenge": None,
                                 }
-                    # Challenge detected but could not bypass — preserve
-                    # the real HTTP status code instead of returning 0.
                     return {
                         "status_code": r.status_code,
                         "html": html,
@@ -586,6 +919,13 @@ class WebsiteCrawler:
                     time.sleep(2 ** attempt)
             except Exception as e:
                 error_info = self._classify_exception(e, url)
+                
+                # Try browser fallback for SSL errors
+                if error_info.get("error_type") == "SSLError" and self.renderer.use_playwright:
+                    fallback = self._try_browser_fallback(url, error_info)
+                    if fallback:
+                        return fallback
+                
                 diags = self._diagnose_connectivity(url)
                 return {
                     "status_code": 0,
@@ -598,7 +938,7 @@ class WebsiteCrawler:
                     "diagnostics": diags,
                 }
 
-        # All retries exhausted for transient errors
+        # All retries exhausted
         diags = self._diagnose_connectivity(url) if last_error_info else None
         return {
             "status_code": 0,
@@ -613,6 +953,7 @@ class WebsiteCrawler:
         }
 
     def _is_html_content(self, url: str, html: str, status_code: int) -> bool:
+        """Check if content is HTML."""
         if status_code < 200 or status_code >= 400:
             return False
         if not html or not html.strip():
@@ -628,6 +969,7 @@ class WebsiteCrawler:
         return len(html) > 200
 
     def _extract_links(self, html: str, current_url: str) -> Set[str]:
+        """Extract links from HTML."""
         soup = BeautifulSoup(html or "", "html.parser")
         found: Set[str] = set()
         for tag in soup.find_all(["a", "link"]):
@@ -645,6 +987,7 @@ class WebsiteCrawler:
         return found
 
     def _extract_structured_data_urls(self, html: str, current_url: str) -> Set[str]:
+        """Extract URLs from structured data."""
         urls: Set[str] = set()
         soup = BeautifulSoup(html or "", "html.parser")
         for s in soup.find_all("script", type="application/ld+json"):
@@ -658,10 +1001,11 @@ class WebsiteCrawler:
         return urls
 
     def _walk_json_for_urls(self, obj, current_url: str) -> Set[str]:
+        """Walk JSON object to find URLs."""
         found: Set[str] = set()
         if isinstance(obj, dict):
             for k, v in obj.items():
-                if k in ("url", "@id", "url", "sameAs", "image") and isinstance(v, str):
+                if k in ("url", "@id", "sameAs", "image") and isinstance(v, str):
                     candidate = v.strip()
                     if candidate.startswith("http"):
                         norm = normalize_url(candidate)
@@ -675,6 +1019,7 @@ class WebsiteCrawler:
         return found
 
     def _extract_canonical(self, html: str, current_url: str) -> Set[str]:
+        """Extract canonical URL."""
         urls: Set[str] = set()
         soup = BeautifulSoup(html or "", "html.parser")
         canon = soup.find("link", rel="canonical")
@@ -687,7 +1032,8 @@ class WebsiteCrawler:
         return urls
 
     def _render_and_extract(self, url: str) -> Set[str]:
-        if not getattr(self.renderer, 'use_playwright', False):
+        """Render page and extract links."""
+        if not self.renderer.use_playwright:
             return set()
         try:
             result = self.renderer.render(url)
@@ -698,80 +1044,41 @@ class WebsiteCrawler:
             return set()
 
     def _discover_urls_from_sitemap(self, root_url: str) -> Set[str]:
-        from ..seo.sitemap import discover_sitemaps, fetch_sitemap, parse_sitemap
-        from ..seo.robots import fetch_robots, parse_robots
+        """Discover URLs from sitemap."""
         found: Set[str] = set()
-
+        
         sitemap_candidates = [
             "/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml",
             "/wp-sitemap.xml", "/sitemap-index.xml",
         ]
-        robots_text = fetch_robots(root_url)
-        if robots_text:
-            parsed_robots = parse_robots(robots_text)
-            for sm in parsed_robots.get("sitemaps", []):
-                if sm not in sitemap_candidates:
-                    sitemap_candidates.append(sm)
-
+        
+        # Try to get sitemap from robots.txt
+        try:
+            robots_url = urljoin(root_url, "/robots.txt")
+            r = self.session.get(robots_url, timeout=10)
+            if r.status_code == 200:
+                for line in r.text.splitlines():
+                    if line.lower().startswith("sitemap:"):
+                        sitemap_url = line.split(":", 1)[1].strip()
+                        if sitemap_url:
+                            sitemap_candidates.insert(0, sitemap_url)
+        except Exception:
+            pass
+        
         for path in sitemap_candidates:
             url = urljoin(root_url, path)
             try:
-                xml = fetch_sitemap(url)
-                if not xml and getattr(self.renderer, 'use_playwright', False):
-                    rendered = self.renderer.render(url)
-                    if rendered.get("ok") and rendered.get("rendered"):
-                        xml = rendered.get("html", "")
-                if xml:
-                    parsed = parse_sitemap(xml)
-                    for entry in parsed:
-                        loc = entry.get("loc", "")
-                        if loc and is_internal(loc, self.root_url):
-                            found.add(normalize_url(loc))
-                        elif loc and not is_internal(loc, self.root_url):
-                            other = urlparse(loc)
-                            here = urlparse(self.root_url)
-                            if other.path and other.netloc == "":
-                                found.add(normalize_url(urljoin(self.root_url, other.path)))
-                            elif other.netloc and other.netloc != here.netloc:
-                                found.add(normalize_url(urljoin(self.root_url, other.path)))
-                        if entry.get("type") == "sitemap":
-                            sub_xml = fetch_sitemap(loc)
-                            if not sub_xml and getattr(self.renderer, 'use_playwright', False):
-                                rendered = self.renderer.render(loc)
-                                if rendered.get("ok") and rendered.get("rendered"):
-                                    sub_xml = rendered.get("html", "")
-                            if sub_xml:
-                                for sub_entry in parse_sitemap(sub_xml):
-                                    sub_loc = sub_entry.get("loc", "")
-                                    if sub_loc and is_internal(sub_loc, self.root_url):
-                                        found.add(normalize_url(sub_loc))
-                                    elif sub_loc:
-                                        other = urlparse(sub_loc)
-                                        if other.path:
-                                            found.add(normalize_url(urljoin(self.root_url, other.path)))
+                r = self.session.get(url, timeout=10)
+                if r.status_code == 200:
+                    xml = r.text
+                    # Parse sitemap
+                    soup = BeautifulSoup(xml, "xml")
+                    for loc in soup.find_all("loc"):
+                        if loc.text:
+                            found.add(normalize_url(loc.text))
             except Exception:
                 continue
-        return found
-
-    def _discover_common_spa_routes(self) -> Set[str]:
-        if not getattr(self.renderer, 'use_playwright', False):
-            return set()
-        common = [
-            "/about", "/about-us", "/contact", "/pricing", "/features",
-        ]
-        found: Set[str] = set()
-        for path in common:
-            url = urljoin(self.root_url, path)
-            if url in self._seen or url in self._queued:
-                continue
-            try:
-                result = self.renderer.render(url)
-                if result.get("ok") and result.get("rendered") and len(result.get("html", "") or "") > 500:
-                    found.add(url)
-                    self._emit("url_discovered", f"Discovered SPA route: {url}",
-                               url=url, metadata={"source": "spa_route", "depth": 1})
-            except Exception:
-                continue
+        
         return found
 
     ASSET_EXTENSIONS = {
@@ -783,6 +1090,7 @@ class WebsiteCrawler:
     }
 
     def _is_asset_url(self, url: str) -> bool:
+        """Check if URL points to an asset file."""
         path = urlparse(url).path.lower()
         if any(path.endswith(ext) for ext in self.ASSET_EXTENSIONS):
             return True
@@ -791,7 +1099,55 @@ class WebsiteCrawler:
                 return True
         return False
 
+    def claim_url_for_crawl(self, url: str, source: str = "unknown", depth: int = 0) -> bool:
+        """Atomically claim a URL for crawling."""
+        norm = normalize_url(url)
+        with self.stats._lock:
+            state = self.url_states.get(norm)
+            if state is None:
+                self.url_states[norm] = {
+                    "status": "crawling",
+                "attempts": 1,
+                    "discovered_from": source,
+                    "crawl_started": True,
+                    "crawl_completed": False,
+                    "depth": depth,
+                }
+                return True
+            if state["status"] in ("crawling", "crawled"):
+                self.stats.duplicate_crawl_attempts_prevented += 1
+                if norm == self.root_url:
+                    self.stats.duplicate_homepage_attempts_prevented += 1
+                return False
+            if state["status"] == "queued":
+                state["status"] = "crawling"
+                state["attempts"] = state.get("attempts", 0) + 1
+                state["crawl_started"] = True
+                return True
+        return True
+
+    def _mark_crawled(self, normalized_url: str):
+        """Mark a URL as fully crawled."""
+        state = self.url_states.get(normalized_url)
+        if state is not None:
+            state["status"] = "crawled"
+            state["crawl_started"] = True
+            state["crawl_completed"] = True
+
+    def _mark_failed(self, url: str):
+        """Mark a URL as failed/blocked/skipped and prevent re-crawling."""
+        norm = normalize_url(url)
+        self._failed.add(norm)
+        self._crawled.add(norm)
+        self.stats.duplicate_crawl_attempts_prevented += 0
+        state = self.url_states.get(norm)
+        if state is not None:
+            state["status"] = "failed"
+            state["crawl_started"] = True
+            state["crawl_completed"] = True
+
     def _add_url(self, url: str, source: str, depth: int = 0) -> bool:
+        """Add a URL to the crawl queue."""
         norm = normalize_url(url)
         if not is_internal(norm, self.root_url):
             if norm not in self._skipped:
@@ -816,6 +1172,15 @@ class WebsiteCrawler:
 
         self._seen.add(norm)
         self._queued.add(norm)
+        if norm not in self.url_states:
+            self.url_states[norm] = {
+                "status": "queued",
+                "attempts": 0,
+                "discovered_from": source,
+                "crawl_started": False,
+                "crawl_completed": False,
+                "depth": depth,
+            }
         self.stats.pages_discovered += 1
         self.stats.pages_queued += 1
         self._discovery_sources[norm] = source
@@ -826,14 +1191,17 @@ class WebsiteCrawler:
         return True
 
     def crawl(self, on_progress=None, job_id: str = None) -> List[Dict]:
+        """Crawl the website starting from the root URL."""
         if job_id:
             self.job_id = job_id
+        
+        # Load robots.txt
         self._load_robots()
 
         self._emit("crawl_started", f"Starting crawl of {self.root_url}",
                    metadata={"max_pages": self.max_pages, "max_depth": self.max_depth})
 
-        # ── Connectivity diagnostics (Task 7) ──
+        # Connectivity diagnostics
         self._diagnose_connectivity(self.root_url)
 
         # Pre-discover from sitemap
@@ -845,6 +1213,7 @@ class WebsiteCrawler:
         self._add_url(self.root_url, "homepage", depth=0)
 
         queue: deque = deque([(self.root_url, 0)])
+        self._queue_set = {self.root_url}
         architecture_detected = False
 
         while queue and self.stats.pages_crawled < self.max_pages:
@@ -852,9 +1221,13 @@ class WebsiteCrawler:
                 break
 
             url, depth = queue.popleft()
-            if url in self._failed or url in self._skipped or url in self._crawled:
+            self._queue_set.discard(url)
+            norm_url = normalize_url(url)
+
+            if not self.claim_url_for_crawl(url, self._discovery_sources.get(norm_url, "unknown"), depth):
                 continue
             if not self._allowed(url):
+                self._mark_failed(url)
                 continue
 
             self._queued.discard(url)
@@ -871,20 +1244,31 @@ class WebsiteCrawler:
             final_url = fetch_result["final_url"] or url
             error_type = fetch_result.get("error_type")
             error_message = fetch_result.get("error_message")
-            is_challenge = fetch_result.get("is_challenge", False)
-            challenge = fetch_result.get("challenge")
             diagnostics = fetch_result.get("diagnostics")
-            norm = normalize_url(final_url)
+            ssl_warning = fetch_result.get("ssl_warning", False)
+            browser_rendered = fetch_result.get("browser_rendered", False)
+            # norm is the original normalized URL from the queue — it must NEVER
+            # be overwritten by the browser's final URL, because a SPA route
+            # may cause the browser to navigate back to the homepage, which
+            # would make norm == homepage_url and break deduplication.
 
-            # If a JS verification challenge was detected but could not be
-            # bypassed by the browser renderer, mark as blocked.
+            # Track SSL warnings
+            if ssl_warning:
+                self.stats.ssl_warnings += 1
+                self._emit("ssl_warning",
+                           f"SSL warning for {norm_url}: {error_message or 'TLS certificate issue'}",
+                           severity="warning", url=norm_url,
+                           metadata={"error_type": error_type,
+                                     "error_message": error_message,
+                                     "diagnostics": diagnostics})
+
+            # Handle blocked pages (JS verification)
             if url in self._blocked:
                 self.stats.pages_blocked += 1
-                self._failed.add(url)
-                self._crawled.add(url)
+                self._mark_failed(url)
                 self._emit("page_crawl_blocked",
-                           f"Blocked {norm} (JS verification): {error_message}",
-                           severity="warning", url=norm,
+                           f"Blocked {norm_url} (JS verification): {error_message}",
+                           severity="warning", url=norm_url,
                            metadata={"status_code": status,
                                      "fetch_time": fetch_time,
                                      "pages_crawled": self.stats.pages_crawled,
@@ -893,14 +1277,14 @@ class WebsiteCrawler:
                                      "block_reason": "js_verification",
                                      "block_details": self._blocked.get(url, {})})
                 self.results.append({
-                    "url": norm,
+                    "url": norm_url,
                     "status_code": status,
                     "html": html,
                     "depth": depth,
                     "rendered": False,
                     "fetched_at": datetime.utcnow().isoformat(),
                     "fetch_time": fetch_time,
-                    "discovery_source": self._discovery_sources.get(norm, "homepage"),
+                    "discovery_source": self._discovery_sources.get(norm_url, "homepage"),
                     "architecture_type": self.architecture.get("architecture_type", "static_html"),
                     "rendering_mode": self.architecture.get("rendering_mode", "raw"),
                     "deployment_strategy": self.architecture.get("deployment_strategy", "direct_html"),
@@ -918,37 +1302,32 @@ class WebsiteCrawler:
 
             # Detect architecture on first successful HTML response
             if not architecture_detected and html and 200 <= status < 400:
-                arch = detect_architecture(html, url=norm)
-                build_info = detect_from_js_bundle(html)
+                arch = self._detect_architecture(html, url=norm_url)
                 self.architecture = arch
-                self.architecture["build_system"] = build_info.get("build_system", "unknown")
                 self.stats.source = "rendered" if arch.get("is_spa") else "raw"
                 architecture_detected = True
                 self._emit("architecture_detected",
                            f"Detected architecture: {arch.get('architecture_type')}",
-                           url=norm,
-                           metadata={"architecture": arch, "build_system": build_info})
+                           url=norm_url,
+                           metadata={"architecture": arch})
 
-                # If SPA, discover additional routes
-                if arch.get("is_spa") and depth == 0:
-                    self.spa_discovery = SpaRouteDiscovery(norm, html, self.renderer)
+                # If SPA, discover additional routes.
+                # The homepage is rendered ONCE here for route discovery.
+                # Individual SPA routes are navigated to directly in the
+                # crawl loop below — never via the homepage renderer.
+                if arch.get("is_spa") and norm_url == self.root_url:
+                    self.spa_discovery = SpaRouteDiscovery(norm_url, html, self.renderer)
                     spa_routes = self.spa_discovery.discover(max_routes=30)
                     for route_url in spa_routes:
-                        if route_url != norm:
+                        if normalize_url(route_url) != norm_url:
                             self._add_url(route_url, "spa_discovery", depth=1)
-                    # Queue newly discovered SPA routes
-                    for discovered in list(self._seen - self._failed - self._skipped - self._crawled - set(q[0] for q in queue)):
-                        if discovered not in [q[0] for q in queue] and discovered != norm:
-                            queue.append((discovered, depth + 1))
 
-            # HTTP status 0 means no valid HTTP response was received — this
-            # is NOT a valid HTTP status and must be treated as a failure.
+            # Handle HTTP errors
             if status == 0 or status >= 400:
                 self.stats.pages_failed += 1
-                self._failed.add(url)
-                self._crawled.add(url)
+                self._mark_failed(url)
                 fetch_error = {
-                    "url": url,
+                    "url": norm_url,
                     "status_code": status,
                     "error_type": error_type or (f"HTTP{status}" if status != 0 else "HTTPZero"),
                     "error_message": error_message or f"HTTP {status}",
@@ -957,8 +1336,8 @@ class WebsiteCrawler:
                 }
                 self.stats.fetch_errors.append(fetch_error)
                 self._emit("page_crawl_failed",
-                           f"Failed to fetch {url}: {error_message or f'HTTP {status}'}",
-                           severity="error", url=url,
+                           f"Failed to fetch {norm_url}: {error_message or f'HTTP {status}'}",
+                           severity="error", url=norm_url,
                            metadata={
                                "status_code": status,
                                "error_type": error_type,
@@ -968,85 +1347,98 @@ class WebsiteCrawler:
                                "retries_exhausted": fetch_result.get("retries_exhausted", False),
                            })
                 self.stats.errors.append(
-                    f"{url}: {error_type or f'HTTP {status}'} - "
+                    f"{norm_url}: {error_type or f'HTTP {status}'} - "
                     f"{error_message or 'No HTTP response received'}"
                 )
                 if self.delay:
                     time.sleep(self.delay)
                 continue
 
-            if not self._is_html_content(norm, html, status):
+            # Skip non-HTML content
+            if not self._is_html_content(norm_url, html, status):
                 self.stats.pages_skipped += 1
-                self._skipped.add(norm)
-                self._skip_reasons[norm] = "non_html_asset"
-                self._crawled.add(url)
+                self._skipped.add(norm_url)
+                self._skip_reasons[norm_url] = "non_html_asset"
+                self._mark_failed(url)
                 self._emit("page_crawl_skipped",
-                           f"Skipped non-HTML resource: {norm}",
-                           severity="warning", url=norm,
+                           f"Skipped non-HTML resource: {norm_url}",
+                           severity="warning", url=norm_url,
                            metadata={"status_code": status, "fetch_time": fetch_time, "reason": "non_html_asset"})
                 if self.delay:
                     time.sleep(self.delay)
                 continue
 
-            # Stage 2: If normal HTTP fetch returned content but the page is
-            # JavaScript-rendered (small HTML shell or known SPA), attempt
-            # browser rendering to get the real DOM.  This supports SPAs
-            # without breaking basic HTTP fetching.
-            browser_rendered = False
-            if (getattr(self.renderer, 'use_playwright', False)
-                    and (self.architecture.get("is_spa") or len(html) < 1200)):
-                rendered = self._render_with_browser(url)
-                if rendered.get("ok") and rendered.get("html"):
-                    browser_rendered = True
-                    html = rendered["html"]
-                    final_url = rendered.get("final_url", final_url)
-                    page_title = rendered.get("page_title", "")
-                    norm = normalize_url(final_url)
-                    self._emit("page_rendered",
-                               f"Rendered {norm} with headless browser in {fetch_time}s",
-                               severity="info", url=norm,
-                               metadata={
-                                   "status_code": rendered.get("status_code"),
-                                   "page_title": page_title,
-                                   "console_errors": len(rendered.get("console_errors", [])),
-                                   "failed_requests": len(rendered.get("failed_requests", [])),
-                               })
+            # Browser rendering for SPA or small pages.
+            # The browser navigates DIRECTLY to the route URL — it never
+            # re-renders the homepage as a prerequisite.
+            # NOTE: browser_final_url is tracked separately and must NOT
+            # overwrite norm_url or final_url used for crawl tracking.
+            # Skip if _fetch already rendered via browser fallback.
+            if not browser_rendered:
+                if (getattr(self.renderer, 'use_playwright', False)
+                        and (self.architecture.get("is_spa") or len(html) < 1200)):
+                    rendered = self._render_with_browser(url)
+                    if rendered.get("ok") and rendered.get("html"):
+                        browser_rendered = True
+                        self.stats.raw_render_events += 1
+                        html = rendered["html"]
+                        browser_final_url = rendered.get("final_url", final_url)
+                        page_title = rendered.get("page_title", "")
+                        self._emit("page_rendered",
+                                   f"Rendered {norm_url} with headless browser in {fetch_time}s",
+                                   severity="info", url=norm_url,
+                                   metadata={
+                                       "status_code": rendered.get("status_code"),
+                                       "page_title": page_title,
+                                       "console_errors": len(rendered.get("console_errors", [])),
+                                       "failed_requests": len(rendered.get("failed_requests", [])),
+                                       "browser_final_url": browser_final_url,
+                                   })
 
-            # Extract links from raw HTML
-            raw_links = self._extract_links(html, final_url or url)
+            # Extract links from HTML (use norm_url as base, not the browser
+            # final URL, so SPA fallback doesn't corrupt link extraction)
+            raw_links = self._extract_links(html, norm_url)
             for link in raw_links:
-                self._add_url(link, "homepage_link", depth=depth + 1)
+                self._add_url(link, "page_link", depth=depth + 1)
 
-            # Extract links from rendered DOM (only for shallow pages to keep crawl fast)
+            # Extract links from rendered DOM (only for shallow pages)
             if depth <= 0 and getattr(self.renderer, 'use_playwright', False) and not browser_rendered:
-                rendered_links = self._render_and_extract(final_url or url)
+                rendered_links = self._render_and_extract(norm_url)
                 for link in rendered_links:
                     self._add_url(link, "rendered_dom", depth=depth + 1)
 
             # Extract structured data URLs
-            sd_urls = self._extract_structured_data_urls(html, final_url or url)
+            sd_urls = self._extract_structured_data_urls(html, norm_url)
             for u in sd_urls:
                 self._add_url(u, "structured_data", depth=depth + 1)
 
             # Extract canonical
-            canon_urls = self._extract_canonical(html, final_url or url)
+            canon_urls = self._extract_canonical(html, norm_url)
             for u in canon_urls:
                 self._add_url(u, "canonical", depth=depth + 1)
 
-            # Queue newly discovered URLs
-            for discovered in list(self._seen - self._failed - self._skipped - self._crawled - set(q[0] for q in queue)):
-                if discovered not in [q[0] for q in queue] and discovered != norm:
-                    queue.append((discovered, depth + 1))
+            # Sync newly discovered queued URLs into the crawl deque.
+            # Only URLs in _queued (added by _add_url above) that are not
+            # already in the deque or already crawled get added.
+            # This replaces the old buggy "re-queue everything in _seen"
+            # logic that re-queued the homepage on every iteration.
+            if self._queued:
+                deque_urls = set(q[0] for q in queue)
+                for queued_url in list(self._queued):
+                    if queued_url not in deque_urls and queued_url not in self._crawled:
+                        queue.append((queued_url, depth + 1))
+                        self._queue_set.add(queued_url)
+                        self._queued.discard(queued_url)
 
             page = {
-                "url": norm,
+                "url": norm_url,
                 "status_code": status,
                 "html": html,
                 "depth": depth,
                 "rendered": browser_rendered,
                 "fetched_at": datetime.utcnow().isoformat(),
                 "fetch_time": fetch_time,
-                "discovery_source": self._discovery_sources.get(norm, "homepage"),
+                "discovery_source": self._discovery_sources.get(norm_url, "homepage"),
                 "architecture_type": self.architecture.get("architecture_type", "static_html"),
                 "rendering_mode": self.architecture.get("rendering_mode", "raw"),
                 "deployment_strategy": self.architecture.get("deployment_strategy", "direct_html"),
@@ -1060,14 +1452,15 @@ class WebsiteCrawler:
 
             self.results.append(page)
             self.stats.pages_crawled += 1
-            self._crawled.add(norm)
+            self._crawled.add(norm_url)
+            self._mark_crawled(norm_url)
 
             self._emit("page_crawl_completed",
-                       f"Crawled {norm} ({status}) in {fetch_time}s",
-                       severity="success", url=norm,
+                       f"Crawled {norm_url} ({status}) in {fetch_time}s",
+                       severity="success", url=norm_url,
                        metadata={"status_code": status, "fetch_time": fetch_time,
                                  "pages_crawled": self.stats.pages_crawled,
-                                 "source": self._discovery_sources.get(norm, "homepage")})
+                                 "source": self._discovery_sources.get(norm_url, "homepage")})
 
             total_known = max(1, self.stats.pages_discovered)
             progress = min(90, int(5 + 85 * self.stats.pages_crawled / total_known))
@@ -1077,7 +1470,7 @@ class WebsiteCrawler:
                 except Exception as e:
                     self._emit("progress_callback_error",
                                f"Progress callback failed: {type(e).__name__}: {e}",
-                               severity="warning", url=norm)
+                               severity="warning", url=norm_url)
 
             self._emit("crawl_progress",
                        f"Crawled {self.stats.pages_crawled} of {total_known} discovered pages",
@@ -1102,11 +1495,10 @@ class WebsiteCrawler:
                            "pages_failed": self.stats.pages_failed,
                            "pages_skipped": self.stats.pages_skipped,
                            "errors": self.stats.errors,
+                           "diagnostics": self.get_crawl_diagnostics(),
                        })
 
-        self._emit_crawl_debug()
-
-        # Emit authoritative crawl result so UI and Background Job agree
+        # Emit authoritative crawl result
         crawl_result = self.stats.to_result()
         self._emit("crawl_result",
                    f"Crawl result: {crawl_result['pages_crawled']} crawled, "
@@ -1122,18 +1514,149 @@ class WebsiteCrawler:
         Both the Live Activity UI and the Background Job ``result_json``
         must use this same object so the counters can never disagree.
         """
-        return self.stats.to_result()
+        result = self.stats.to_result()
+        result["diagnostics"] = self.get_crawl_diagnostics()
+        return result
 
-    def _emit_crawl_debug(self):
-        self._emit("crawl_debug", "Crawl debug summary", severity="info",
-                   metadata={
-                       "pages_crawled": self.stats.pages_crawled,
-                       "pages_discovered": self.stats.pages_discovered,
-                       "pages_queued": self.stats.pages_queued,
-                       "pages_failed": self.stats.pages_failed,
-                       "pages_skipped": len(self._skipped),
-                       "pages_blocked": self.stats.pages_blocked,
-                       "skip_reasons": dict(list(self._skip_reasons.items())[:20]),
-                       "discovery_sources": dict(list(self._discovery_sources.items())[:20]),
-                       "fetch_errors": self.stats.fetch_errors,
-                   })
+    def get_crawl_diagnostics(self) -> Dict:
+        """Return final diagnostic report with authoritative counts.
+
+        Distinguishes raw_render_events (every Playwright navigation)
+        from unique_pages_crawled (pages successfully analyzed once).
+        """
+        unique_crawled_urls = {
+            u for u, s in self.url_states.items() if s.get("status") == "crawled"
+        }
+        unique_queued_urls = {
+            u for u, s in self.url_states.items() if s.get("status") == "queued"
+        }
+        unique_discovered = len(self.url_states)
+        return {
+            "unique_discovered": unique_discovered,
+            "unique_queued": len(unique_queued_urls),
+            "unique_crawled": len(unique_crawled_urls),
+            "duplicate_crawl_attempts_prevented": self.stats.duplicate_crawl_attempts_prevented,
+            "duplicate_homepage_attempts_prevented": self.stats.duplicate_homepage_attempts_prevented,
+            "raw_render_events": self.stats.raw_render_events,
+        }
+
+    def _detect_architecture(self, html: str, url: str) -> Dict:
+        """Detect website architecture (SPA vs static)."""
+        arch = {
+            "architecture_type": "static_html",
+            "rendering_mode": "raw",
+            "deployment_strategy": "direct_html",
+            "is_spa": False,
+            "detected_spa_framework": "",
+            "spa_indicators": [],
+            "build_system": "unknown",
+            "confidence": 0.0
+        }
+
+        html_lower = html.lower()
+        confidence = 0.0
+
+        # SPA Framework detection
+        spa_frameworks = {
+            "react": ["react", "react-dom", "__react", "_react", "reactroot", "reactapp", "reactjs"],
+            "vue": ["vue", "vuejs", "vue-app", "vue_", "v-app", "v-html", "v-text"],
+            "angular": ["ng-app", "ng-controller", "angular", "ng-", "ngversion"],
+            "next": ["__next", "next/", "nextjs", "next.js"],
+            "nuxt": ["__nuxt", "nuxt", "nuxtjs"],
+            "svelte": ["svelte", "sveltejs", "app.svelte"],
+            "gatsby": ["gatsby", "gatsbyjs", "___gatsby"],
+            "ember": ["ember", "emberjs"],
+            "backbone": ["backbone"],
+            "jquery": ["jquery"],
+            "alpine": ["alpine", "x-data", "x-init"],
+            "htmx": ["htmx", "hx-"],
+            "livewire": ["livewire", "wire:"],
+            "alpinejs": ["alpinejs", "x-data"],
+        }
+
+        for framework, keywords in spa_frameworks.items():
+            for keyword in keywords:
+                if keyword in html_lower:
+                    arch["detected_spa_framework"] = framework
+                    arch["spa_indicators"].append(keyword)
+                    confidence += 0.15
+                    break
+            if arch["detected_spa_framework"]:
+                break
+
+        # Build system detection
+        build_indicators = {
+            "webpack": ["webpack", "chunk-", "vendors~", "main."],
+            "vite": ["vite", "vitejs", "vite_"],
+            "rollup": ["rollup"],
+            "esbuild": ["esbuild"],
+            "parcel": ["parcel"],
+            "babel": ["babel"],
+            "next": ["next/", "_next/"],
+            "nuxt": ["_nuxt/"],
+            "gatsby": ["gatsby"],
+            "angular-cli": ["angular-cli", "ng build"],
+        }
+
+        for build_system, indicators in build_indicators.items():
+            for indicator in indicators:
+                if indicator in html_lower:
+                    arch["build_system"] = build_system
+                    break
+            if arch["build_system"] != "unknown":
+                break
+
+        # Check for SPA characteristics
+        spa_patterns = [
+            ("container", "#app", 0.1),
+            ("container", "#root", 0.1),
+            ("container", "#__next", 0.15),
+            ("container", "#__nuxt", 0.15),
+            ("container", "[data-reactroot]", 0.15),
+            ("container", "[data-v-app]", 0.1),
+            ("container", "ng-view", 0.1),
+            ("container", "ui-view", 0.1),
+            ("router", "react-router", 0.2),
+            ("router", "vue-router", 0.2),
+            ("router", "angular-router", 0.2),
+            ("state", "__NEXT_DATA__", 0.2),
+            ("state", "__NUXT__", 0.2),
+            ("state", "__INITIAL_STATE__", 0.15),
+            ("state", "__PRELOADED_STATE__", 0.15),
+            ("state", "window.APP_STATE", 0.15),
+            ("js_bundle", "chunk", 0.05),
+            ("js_bundle", "bundle", 0.05),
+            ("js_bundle", "main.js", 0.05),
+            ("empty_body", "html shell", 0.2),
+        ]
+
+        for pattern_type, pattern, weight in spa_patterns:
+            if pattern in html_lower:
+                arch["spa_indicators"].append(f"{pattern_type}:{pattern}")
+                confidence += weight
+
+        # Check if body is mostly empty
+        body_match = re.search(r"<body[^>]*>(.*?)</body>", html, re.IGNORECASE | re.DOTALL)
+        if body_match:
+            body_content = body_match.group(1).strip()
+            if len(body_content) < 1000 and not re.search(r"<h[1-6]", body_content, re.IGNORECASE):
+                confidence += 0.1
+                arch["spa_indicators"].append("empty_body")
+
+        # Determine architecture type
+        arch["confidence"] = min(confidence, 1.0)
+        if confidence >= 0.3:
+            arch["is_spa"] = True
+            arch["architecture_type"] = "spa"
+            arch["rendering_mode"] = "client"
+            arch["deployment_strategy"] = "client_side_rendering"
+        elif arch["detected_spa_framework"]:
+            arch["is_spa"] = True
+            arch["architecture_type"] = "spa"
+            arch["rendering_mode"] = "client"
+        else:
+            arch["is_spa"] = False
+            arch["architecture_type"] = "static_html"
+            arch["rendering_mode"] = "raw"
+
+        return arch

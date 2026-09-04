@@ -99,7 +99,7 @@
         {% for o in optimizations %}
         <tr style="transition:background 0.2s ease;">
           <td style="padding:10px 14px;">
-            <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;">{{ o.id[:8] }}</code>
+            <code style="font-size:11px;background:var(--bg);padding:2px 8px;border-radius:4px;">{{ o.id|string|truncate(8, true, '') }}</code>
           </td>
           <td style="padding:10px 14px;font-size:12px;color:var(--muted);font-family:monospace;white-space:nowrap;">
             {{ o.created_at|dt }}

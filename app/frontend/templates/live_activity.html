@@ -287,6 +287,7 @@ let currentJobId = null;
 let isPaused = false;
 let reconnectAttempts = 0;
 const maxReconnectAttempts = 5;
+const seenEventIds = new Set();
 
 function initStream(jobId) {
   if (eventSource) {
@@ -294,6 +295,7 @@ function initStream(jobId) {
     eventSource = null;
   }
   currentJobId = jobId;
+  seenEventIds.clear();
   const log = document.getElementById('activityLog');
   if (log) log.innerHTML = '';
   updateConnectionStatus('connecting');
@@ -349,14 +351,38 @@ function updateConnectionStatus(status) {
     'connected': { color: 'var(--good)', text: 'Connected' },
     'connecting': { color: 'var(--warn)', text: 'Connecting...' },
     'reconnecting': { color: 'var(--warn)', text: 'Reconnecting...' },
-    'disconnected': { color: 'var(--bad)', text: 'Disconnected' }
+    'disconnected': { color: 'var(--bad)', text: 'Disconnected' },
+    'completed': { color: 'var(--good)', text: 'Completed' },
+    'failed': { color: 'var(--bad)', text: 'Failed' }
   };
   const s = statusMap[status] || statusMap['disconnected'];
   dot.style.background = s.color;
   text.textContent = s.text;
 }
 
+function disableControls(disabled) {
+  const btnPause = document.getElementById('btnPause');
+  const btnResume = document.getElementById('btnResume');
+  const btnStop = document.getElementById('btnStop');
+  if (btnPause) btnPause.disabled = disabled;
+  if (btnResume) btnResume.disabled = disabled;
+  if (btnStop) btnStop.disabled = disabled;
+  if (disabled) {
+    if (btnPause) btnPause.style.opacity = '0.5';
+    if (btnStop) btnStop.style.opacity = '0.5';
+  } else {
+    if (btnPause) btnPause.style.opacity = '1';
+    if (btnStop) btnStop.style.opacity = '1';
+  }
+}
+
 function handleEvent(data) {
+  const eventId = data.id || data.event_id || `${data.event_type}-${data.timestamp}-${data.message}`;
+  if (seenEventIds.has(eventId)) {
+    return;
+  }
+  seenEventIds.add(eventId);
+
   const log = document.getElementById('activityLog');
   
   // Helper to update count
@@ -368,7 +394,7 @@ function handleEvent(data) {
     }
   }
 
-  if (data.event_type === 'page_crawl_started') {
+  if (data.event_type === 'page_crawl_started' || data.event_type === 'page_crawled') {
     const urlEl = document.getElementById('currentUrl');
     if (urlEl) urlEl.textContent = data.url || '';
     const actionEl = document.getElementById('currentAction');
@@ -377,7 +403,7 @@ function handleEvent(data) {
     if (agentEl) agentEl.textContent = data.agent_name || '';
   }
 
-  if (data.event_type === 'page_crawl_completed') {
+  if (data.event_type === 'page_crawl_completed' || data.event_type === 'page_crawled') {
     updateCount('pagesCrawled');
   }
 
@@ -466,13 +492,42 @@ function handleEvent(data) {
     updateConnectionStatus('disconnected');
   }
 
-  if (data.event_type === 'crawl_completed' || data.event_type === 'analysis_completed') {
+  if (data.event_type === 'analysis_completed' || data.event_type === 'job_completed') {
     document.getElementById('statusBadge').innerHTML = '<span class="badge badge-success" style="font-size:14px;padding:6px 18px;border-radius:20px;">✅ COMPLETED</span>';
     document.getElementById('progressFill').style.width = '100%';
     document.getElementById('progressText').textContent = '100%';
+    document.getElementById('currentAgent').textContent = 'Completed';
+    document.getElementById('currentAction').textContent = data.message || 'Job completed';
     if (eventSource) { eventSource.close(); eventSource = null; }
-    updateConnectionStatus('disconnected');
+    updateConnectionStatus('completed');
+    disableControls(true);
   }
+
+  if (data.event_type === 'analysis_failed' || data.event_type === 'job_failed') {
+    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-high" style="font-size:14px;padding:6px 18px;border-radius:20px;">❌ FAILED</span>';
+    document.getElementById('progressFill').style.width = '0%';
+    document.getElementById('progressText').textContent = '0%';
+    document.getElementById('currentAgent').textContent = 'Failed';
+    document.getElementById('currentAction').textContent = data.message || 'Job failed';
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    updateConnectionStatus('failed');
+    disableControls(true);
+  }
+
+   // Authoritative crawl result — sync counters to the single source of truth.
+   // Does NOT close the EventSource here — the orchestrator may still be
+   // running post-crawl phases (analysis, planning, etc.).
+   if (data.event_type === 'crawl_result' && data.metadata) {
+     const m = data.metadata;
+     document.getElementById('pagesCrawled').textContent = m.pages_crawled || 0;
+     document.getElementById('pagesDiscovered').textContent = m.pages_discovered || 0;
+     document.getElementById('pagesQueued').textContent = m.pages_queued || 0;
+     document.getElementById('pagesFailed').textContent = m.pages_failed || 0;
+     document.getElementById('pagesSkipped').textContent = m.pages_skipped || 0;
+     const errVal = Array.isArray(m.errors) ? m.errors.length : (m.errors || 0);
+     document.getElementById('errorCount').textContent = errVal;
+     document.getElementById('errorCount2').textContent = errVal;
+   }
 
   if (data.event_type === 'crawl_debug') {
     const debug = document.getElementById('crawlDebug');
@@ -500,6 +555,21 @@ function handleEvent(data) {
         }
         if (Object.keys(m.skip_reasons).length > 5) {
           text += `  ... and ${Object.keys(m.skip_reasons).length - 5} more\n`;
+        }
+      }
+      if (m.fetch_errors && m.fetch_errors.length > 0) {
+        text += `\n🚨 Fetch Errors\n${'─'.repeat(40)}\n`;
+        for (const fe of m.fetch_errors.slice(0, 5)) {
+          text += `  ${fe.url || 'unknown'}\n`;
+          text += `    error_type: ${fe.error_type || 'N/A'}\n`;
+          text += `    error_message: ${fe.error_message || 'N/A'}\n`;
+          if (fe.diagnostics) {
+            const d = fe.diagnostics;
+            text += `    diagnostics: dns=${d.dns || '?'}, tcp=${d.tcp || '?'}, tls=${d.tls || '?'}, http=${d.http || '?'}\n`;
+          }
+        }
+        if (m.fetch_errors.length > 5) {
+          text += `  ... and ${m.fetch_errors.length - 5} more\n`;
         }
       }
       debug.textContent = text;

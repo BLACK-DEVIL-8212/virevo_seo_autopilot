@@ -102,12 +102,14 @@ class FTPConnection:
         self.password = password
         self.root = (root or "/").rstrip("/") or "/"
         self._conn: Optional[ftplib.FTP] = None
+        self._last_download_error: Optional[Dict] = None
 
     def connect(self) -> ConnectionTestResult:
         import ftplib
         try:
             self._conn = ftplib.FTP()
             self._conn.connect(self.host, self.port, timeout=15)
+            self._conn.set_pasv(True)
             self._conn.login(self.username, self.password)
             cwd = ""
             try:
@@ -156,13 +158,25 @@ class FTPConnection:
     def listdir(self, path: str) -> List[str]:
         if not self._conn:
             raise RuntimeError("FTP not connected")
+        original_cwd = None
+        try:
+            original_cwd = self._conn.pwd()
+        except Exception:
+            pass
         try:
             self._conn.cwd(path)
+        except Exception:
+            pass
+        try:
             items: list[str] = []
             self._conn.retrlines("LIST", items.append)
             return items
-        except Exception:
-            raise
+        finally:
+            if original_cwd:
+                try:
+                    self._conn.cwd(original_cwd)
+                except Exception:
+                    pass
 
     def download(self, remote_path: str) -> Optional[bytes]:
         if not self._conn:
@@ -171,7 +185,12 @@ class FTPConnection:
             buf = io.BytesIO()
             self._conn.retrbinary(f"RETR {remote_path}", buf.write)
             return buf.getvalue()
-        except Exception:
+        except Exception as e:
+            self._last_download_error = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "remote_path": remote_path,
+            }
             return None
 
     def upload(self, remote_path: str, data: bytes) -> FTPResult:

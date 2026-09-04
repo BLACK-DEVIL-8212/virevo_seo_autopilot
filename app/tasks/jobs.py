@@ -110,6 +110,13 @@ def _record_progress(job_id: str, progress: int, message: str = ""):
         retry_on_lock(_do, cleanup=lambda: sess.rollback())
     finally:
         sess.close()
+    
+    event_manager = get_event_manager()
+    event_manager.emit(
+        job_id=job_id, event_type="job_progress",
+        message=message or f"Progress: {progress}%",
+        severity="info", metadata={"progress": progress},
+    )
 
 
 def enqueue(job_type: str, website_id: Optional[int], func: Callable, *args, **kwargs) -> str:

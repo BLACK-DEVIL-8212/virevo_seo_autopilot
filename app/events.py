@@ -39,8 +39,10 @@ if _IS_SQLITE:
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
+Base.metadata.create_all(bind=_engine)
+
 # Global event storage queue and thread
-_event_queue: queue.Queue = queue.Queue()
+_event_queue: queue.Queue = queue.Queue(maxsize=10000)
 _event_storage_thread: Optional[threading.Thread] = None
 _event_storage_running = threading.Event()
 
@@ -146,9 +148,9 @@ class EventManager:
     def _store_event(self, event_data: dict):
         """Queue event for storage in database."""
         try:
-            _event_queue.put_nowait(event_data)
+            _event_queue.put(event_data, timeout=5)
         except queue.Full:
-            pass
+            logger.warning("Event queue full, dropping event: %s", event_data.get("event_type", ""))
 
     def subscribe(self, job_id: str, q: queue.Queue):
         """Subscribe to events for a specific job."""
@@ -242,7 +244,7 @@ class EventManager:
                 stats["by_severity"][e.severity] += 1
                 if e.agent_name:
                     stats["by_agent"][e.agent_name] += 1
-                if e.event_type == "page_crawl_completed":
+                if e.event_type == "page_crawled":
                     stats["pages_crawled"] += 1
                 elif e.event_type == "url_discovered":
                     stats["pages_discovered"] += 1
@@ -250,11 +252,15 @@ class EventManager:
                     stats["pages_queued"] = stats.get("pages_queued", 0) + 1
                 elif e.event_type == "page_crawl_failed":
                     stats["pages_failed"] = stats.get("pages_failed", 0) + 1
+                elif e.event_type == "page_crawl_skipped":
+                    stats["pages_skipped"] = stats.get("pages_skipped", 0) + 1
+                elif e.event_type == "page_blocked":
+                    stats["pages_blocked"] = stats.get("pages_blocked", 0) + 1
                 elif e.event_type == "seo_issue_found":
                     stats["issues_found"] += 1
                 elif e.event_type in ("page_crawl_failed", "error"):
                     stats["errors"] += 1
-                if e.event_type == "page_crawl_started":
+                if e.event_type in ("crawl_started", "page_crawl_started"):
                     stats["current_url"] = e.url
                 if e.agent_name:
                     stats["current_agent"] = e.agent_name
